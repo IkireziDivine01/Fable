@@ -32,19 +32,19 @@ psql -f database/schema.sql
 to be added
 
 ## Features Implemented
-- ✅ Adaptive UI for 3 age groups
-- ✅ 8 API endpoints
-- ✅ PostgreSQL database (9 tables)
-- ✅ Offline support (Service Worker + IndexedDB)
-- ✅ PWA (offline-functional)
-- ✅ AR storytelling (WebXR integration)
-- ✅ Figma prototype
+- Adaptive UI for 3 age groups
+- 8 API endpoints
+- PostgreSQL database (9 tables)
+- Offline support (Service Worker + IndexedDB)
+- PWA (offline-functional)
+- AR storytelling (WebXR integration)
+- Figma prototype
 
 ## Testing
-- ✅ Tested with 3+ users
-- ✅ Lighthouse audit: [scores]
-- ✅ Offline functionality verified
-- ✅ API endpoints tested with Postman
+- Tested with 3+ users
+- Lighthouse audit: [scores]
+- Offline functionality verified
+- API endpoints tested with Postman
 
 ## Known Limitations
 - AR requires iOS 14+ or Android 10+
