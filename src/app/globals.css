@@ -1,0 +1,161 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-display-lg: 'Source Serif 4', Georgia, serif;
+  --font-display-lg-mobile: 'Source Serif 4', Georgia, serif;
+  --font-headline-xl: 'Source Serif 4', Georgia, serif;
+  --font-headline-lg: 'Source Serif 4', Georgia, serif;
+  --font-headline-md: 'Source Serif 4', Georgia, serif;
+  --font-body-lg: Inter, Arial, sans-serif;
+  --font-body-md: Inter, Arial, sans-serif;
+  --font-label-md: Inter, Arial, sans-serif;
+  --font-label-sm: Inter, Arial, sans-serif;
+
+  --text-display-lg: 4.5rem;
+  --text-display-lg--line-height: 1.05;
+  --text-display-lg-mobile: 3rem;
+  --text-display-lg-mobile--line-height: 1.05;
+  --text-headline-xl: 3rem;
+  --text-headline-xl--line-height: 1.1;
+  --text-headline-lg: 2.5rem;
+  --text-headline-lg--line-height: 1.12;
+  --text-headline-md: 1.5rem;
+  --text-headline-md--line-height: 1.2;
+  --text-body-lg: 1.125rem;
+  --text-body-lg--line-height: 1.65;
+  --text-body-md: 1rem;
+  --text-body-md--line-height: 1.65;
+  --text-label-md: 0.75rem;
+  --text-label-md--line-height: 1.2;
+  --text-label-sm: 0.6875rem;
+  --text-label-sm--line-height: 1.2;
+}
+
+@layer base {
+  body {
+    background: #fff8f5;
+    color: #1e1b18;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+@layer components {
+  .pillar-card {
+    border: 1px solid rgb(215 193 199 / 0.2);
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    transition: all 300ms;
+  }
+
+  .pillar-card:hover {
+    border-color: rgb(215 193 199 / 0.4);
+    box-shadow:
+      0 10px 15px -3px rgb(0 0 0 / 0.1),
+      0 4px 6px -4px rgb(0 0 0 / 0.1);
+    transform: translateY(-0.25rem);
+  }
+
+  .tactile-button {
+    transition: all 200ms;
+  }
+
+  .tactile-button:active {
+    transform: scale(0.95);
+  }
+}
+
+/* Smooth transitions */
+* {
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
+  transition-duration: 200ms;
+}
+
+/* Selection styles */
+::selection {
+  background: #ffdbd2;
+  color: #3c0800;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #fbf2ed;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d7c1c7;
+  border-radius: 0.25rem;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a7391c;
+}
+
+/* Focus states for accessibility */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid #ff7956;
+  outline-offset: 2px;
+}
+
+/* Remove default input styling */
+input[type='email'] {
+  width: 100%;
+}
+
+input[type='email']::placeholder {
+  color: #857278;
+}
+
+/* Link transitions */
+a {
+  transition:
+    color 200ms,
+    background-color 200ms,
+    border-color 200ms;
+}
+
+/* Button base styles */
+button {
+  transition: all 200ms;
+}
+
+/* Grid utilities */
+.container-max {
+  max-width: 1120px;
+}
+
+/* Responsive text */
+@media (max-width: 768px) {
+  .display-lg-mobile {
+    font-size: var(--text-display-lg-mobile);
+    line-height: var(--tw-leading, var(--text-display-lg-mobile--line-height));
+  }
+}
+
+/* Animation for floating elements */
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* Material symbols fallback */
+.material-symbols-outlined {
+  font-feature-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+  font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+}
