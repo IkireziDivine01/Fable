@@ -1,11 +1,12 @@
 import { auth } from "./auth";
 
 export default auth((req) => {
-  // Middleware for auth protection (Week 1 Day 4)
+  // Middleware for auth protection
+  // Protected routes: /dashboard, /stories, etc.
   void req;
   return null;
 });
 
 export const config = {
-  matcher: ["/parent/:path*", "/kid/:path*", "/elder/:path*"],
+  matcher: ["/dashboard/:path*", "/parent/:path*", "/kid/:path*", "/elder/:path*", "/stories/:path*"],
 };

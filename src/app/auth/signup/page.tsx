@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { FormEvent, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import logo from '@/assets/darklogo.svg';
 import {
   ArrowRightIcon,
@@ -14,11 +15,52 @@ import {
 } from '@/components/HeroIcons';
 
 export default function SignUp() {
+  const router = useRouter();
   const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setSubmitted(true);
+    setError('');
+    setSubmitted(false);
+    setIsSubmitting(true);
+
+    const formData = new FormData(event.currentTarget);
+    const name = String(formData.get('name') ?? '');
+    const household = String(formData.get('household') ?? '');
+    const email = String(formData.get('email') ?? '');
+    const password = String(formData.get('password') ?? '');
+
+    try {
+      const response = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name,
+          household,
+          email,
+          password,
+          role: 'parent',
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || result.error) {
+        throw new Error(result.error || 'Sign up failed. Please try again.');
+      }
+
+      setSubmitted(true);
+      setTimeout(() => {
+        router.push('/auth/signin');
+      }, 2000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sign up failed. Please try again.');
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -40,6 +82,12 @@ export default function SignUp() {
               Set up the first guardian account, then invite learners and elders as Fable grows
               with your household.
             </p>
+
+            {error && (
+              <div className="mb-5 rounded-lg bg-[#fff1ec] px-4 py-4 text-left font-body-md text-sm text-[#a7391c]">
+                <p>{error}</p>
+              </div>
+            )}
 
             <form onSubmit={handleSubmit} className="space-y-5">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -127,26 +175,20 @@ export default function SignUp() {
 
               <button
                 type="submit"
-                className="flex h-14 w-full items-center justify-center gap-3 rounded-lg bg-[#FF7956] px-8 font-label-md text-label-md tracking-widest text-white shadow-lg shadow-[#ff7956]/20 transition-all hover:-translate-y-0.5 hover:bg-[#ee6744] active:scale-95"
+                disabled={isSubmitting}
+                className="flex h-14 w-full items-center justify-center gap-3 rounded-lg bg-[#FF7956] px-8 font-label-md text-label-md tracking-widest text-white shadow-lg shadow-[#ff7956]/20 transition-all hover:-translate-y-0.5 hover:bg-[#ee6744] active:scale-95 disabled:opacity-75"
               >
-                <span>CREATE FAMILY LIBRARY</span>
+                <span>{isSubmitting ? 'CREATING...' : 'CREATE FAMILY LIBRARY'}</span>
                 <ArrowRightIcon className="h-5 w-5" />
               </button>
             </form>
 
             {submitted && (
-              <div className="mt-5 rounded-lg bg-[#fff1ec] px-4 py-4 text-left font-body-md text-sm text-[#a7391c]">
+              <div className="mt-5 rounded-lg bg-[#f1f5e9] px-4 py-4 text-left font-body-md text-sm text-[#2d5016]">
                 <p className="flex items-center gap-2">
                   <CheckCircleIcon className="h-5 w-5 shrink-0" />
-                  Your family library details are ready for the prototype flow.
+                  Account created! Redirecting to sign in...
                 </p>
-                <Link
-                  href="/auth/signin"
-                  className="mt-3 inline-flex items-center gap-2 font-label-sm text-label-sm uppercase tracking-widest text-[#33001d]"
-                >
-                  Continue to sign in
-                  <ArrowRightIcon className="h-4 w-4" />
-                </Link>
               </div>
             )}
 

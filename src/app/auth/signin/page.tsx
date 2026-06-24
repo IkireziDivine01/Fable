@@ -14,15 +14,8 @@ import {
   ShieldCheckIcon,
 } from '@/components/HeroIcons';
 
-const roles = [
-  { value: 'parent', label: 'Parent', description: 'Manage family profiles' },
-  { value: 'learner', label: 'Learner', description: 'Continue story lessons' },
-  { value: 'elder', label: 'Elder', description: 'Record and guide stories' },
-];
-
 export default function SignIn() {
   const router = useRouter();
-  const [role, setRole] = useState(roles[0].value);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -40,7 +33,6 @@ export default function SignIn() {
     const result = await signInWithCredentials('credentials', {
       email,
       password,
-      role,
       redirect: false,
     });
 
@@ -52,7 +44,10 @@ export default function SignIn() {
     }
 
     setSubmitted(true);
-    router.refresh();
+    // Redirect to dashboard after successful signin
+    setTimeout(() => {
+      router.push('/dashboard');
+    }, 1000);
   };
 
   return (
@@ -113,39 +108,6 @@ export default function SignIn() {
             </p>
 
             <form onSubmit={handleSubmit} className="space-y-5">
-              <fieldset>
-                <legend className="mb-3 font-label-sm text-label-sm uppercase tracking-widest text-[#857278]">
-                  Profile Type
-                </legend>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  {roles.map((item) => (
-                    <label
-                      key={item.value}
-                      className={`cursor-pointer rounded-lg border p-4 transition-all ${
-                        role === item.value
-                          ? 'border-[#FF7956] bg-[#fff1ec] text-[#33001d]'
-                          : 'border-[#e9d7d0] bg-white text-[#524348] hover:border-[#d7c1c7]'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="role"
-                        value={item.value}
-                        checked={role === item.value}
-                        onChange={(event) => setRole(event.target.value)}
-                        className="sr-only"
-                      />
-                      <span className="block font-label-md text-label-md uppercase tracking-widest">
-                        {item.label}
-                      </span>
-                      <span className="mt-2 block font-body-md text-sm leading-snug opacity-75">
-                        {item.description}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-
               <label className="block">
                 <span className="mb-2 block font-label-sm text-label-sm uppercase tracking-widest text-[#857278]">
                   Email
@@ -186,9 +148,9 @@ export default function SignIn() {
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="flex h-14 w-full items-center justify-center gap-3 rounded-lg bg-[#FF7956] px-8 font-label-md text-label-md tracking-widest text-white shadow-lg shadow-[#ff7956]/20 transition-all hover:-translate-y-0.5 hover:bg-[#ee6744] active:scale-95"
+                className="flex h-14 w-full items-center justify-center gap-3 rounded-lg bg-[#FF7956] px-8 font-label-md text-label-md tracking-widest text-white shadow-lg shadow-[#ff7956]/20 transition-all hover:-translate-y-0.5 hover:bg-[#ee6744] active:scale-95 disabled:opacity-75"
               >
-                <span>{isSubmitting ? 'SIGNING IN' : 'SIGN IN'}</span>
+                <span>{isSubmitting ? 'SIGNING IN...' : 'SIGN IN'}</span>
                 <ArrowRightIcon className="h-5 w-5" />
               </button>
             </form>
