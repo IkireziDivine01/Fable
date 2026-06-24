@@ -1,36 +1,52 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Fable: Adaptive PWA with AR Storytelling
 
-## Getting Started
+## Features
+- Adaptive UI (child/parent/elder profiles)
+- PWA
+- AR story overlays (WebXR)
+- Kinyarwanda language support
 
-First, run the development server:
+## Tech Stack
+- Frontend: React, Tailwind CSS
+- Backend: Node.js, Express
+- Database: PostgreSQL
+- AR: WebXR, Three.js
 
+## Quick Start
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# Frontend
+cd frontend
+npm install
+npm start
+
+# Backend (new terminal)
+cd backend
+npm install
+npm start
+
+# Database
+psql -f database/schema.sql
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## API Documentation
+to be added
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Features Implemented
+- Adaptive UI for 3 age groups
+- 8 API endpoints
+- PostgreSQL database (9 tables)
+- Offline support (Service Worker + IndexedDB)
+- PWA (offline-functional)
+- AR storytelling (WebXR integration)
+- Figma prototype
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Testing
+- Tested with 3+ users
+- Lighthouse audit: [scores]
+- Offline functionality verified
+- API endpoints tested with Postman
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Known Limitations
+- AR requires iOS 14+ or Android 10+
+- WebXR support still rolling out
+- 3D models are simplified for MVP
