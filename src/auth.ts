@@ -79,7 +79,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (session.user) {
         session.user.role = typeof token.role === 'string' ? token.role : undefined;
         session.user.householdId = typeof token.householdId === 'string' ? token.householdId : undefined;
-        session.user.id = typeof token.id === 'string' ? token.id : undefined;
+        if (typeof token.id === 'string') {
+          session.user.id = token.id;
+        }
       }
       return session;
     },
