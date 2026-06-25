@@ -18,6 +18,8 @@ declare module 'next-auth' {
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  trustHost: true,
+
   providers: [
     Credentials({
       credentials: {
@@ -63,9 +65,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
     }),
   ],
+
   pages: {
     signIn: '/auth/signin',
   },
+
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
@@ -75,10 +79,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
       return token;
     },
+
     async session({ session, token }) {
       if (session.user) {
-        session.user.role = typeof token.role === 'string' ? token.role : undefined;
-        session.user.householdId = typeof token.householdId === 'string' ? token.householdId : undefined;
+        session.user.role =
+          typeof token.role === 'string' ? token.role : undefined;
+        session.user.householdId =
+          typeof token.householdId === 'string'
+            ? token.householdId
+            : undefined;
+
         if (typeof token.id === 'string') {
           session.user.id = token.id;
         }
