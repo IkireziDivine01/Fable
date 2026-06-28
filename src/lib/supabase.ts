@@ -20,7 +20,7 @@ Get your credentials from: https://supabase.com → Select Project → Settings 
 export const supabase = supabaseUrl && supabaseAnonKey 
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
-
+  
 /**
  * Sign up a new user and create their profile
  */
@@ -169,7 +169,17 @@ export async function getUserProfile(userId: string) {
 
   const { data, error } = await supabase
     .from('user_profiles')
-    .select('*')
+    .select(`
+      id,
+      email,
+      name,
+      role,
+      local_pin,
+      household_id,
+      invited_by,
+      created_at,
+      updated_at
+    `)
     .eq('id', userId)
     .single();
 
@@ -182,8 +192,11 @@ CREATE TABLE user_profiles (
   email TEXT,
   name TEXT,
   role TEXT DEFAULT 'parent',
+  local_pin TEXT,
   household_id UUID REFERENCES households(id),
-  created_at TIMESTAMP DEFAULT NOW()
+  invited_by UUID REFERENCES user_profiles(id),
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
 );
 `
       : `Failed to fetch profile: ${error.message}`;
@@ -193,6 +206,21 @@ CREATE TABLE user_profiles (
       : missingTableMessage;
 
     throw new Error(rlsMessage);
+  }
+
+  // Map snake_case from database to camelCase for the app
+  if (data) {
+    return {
+      id: data.id,
+      email: data.email,
+      name: data.name,
+      role: data.role,
+      localPin: data.local_pin,
+      householdId: data.household_id,
+      invitedBy: data.invited_by,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+    };
   }
 
   return data;
@@ -269,6 +297,204 @@ export async function createStory(
 
   if (error) {
     throw new Error(`Failed to create story: ${error.message}`);
+  }
+
+  return data;
+}
+
+/**
+ * Generate an invitation code for a kid or elder
+ */
+export async function generateInvitation(
+  householdId: string,
+  role: 'kid' | 'author',
+  nameHint?: string
+) {
+  if (!supabase) {
+    throw new Error('Supabase is not configured. Add environment variables to .env.local');
+  }
+
+  const { data } = await supabase.auth.getSession();
+  if (!data?.session?.user) {
+    throw new Error('Must be authenticated to generate invitations');
+  }
+
+  // Generate a random 12-character code
+  const code = Math.random().toString(36).substring(2, 14).toUpperCase().slice(0, 12);
+
+  const { data: inviteData, error } = await supabase
+    .from('invitations')
+    .insert([
+      {
+        household_id: householdId,
+        code,
+        role,
+        invited_by: data.session.user.id,
+        name_hint: nameHint,
+      },
+    ])
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to create invitation: ${error.message}`);
+  }
+
+  return inviteData;
+}
+
+/**
+ * Validate and get invitation details
+ */
+export async function validateInvitation(code: string) {
+  if (!supabase) {
+    throw new Error('Supabase is not configured. Add environment variables to .env.local');
+  }
+
+  const { data, error } = await supabase
+    .from('invitations')
+    .select('*')
+    .eq('code', code)
+    .single();
+
+  if (error || !data) {
+    throw new Error('Invitation code not found');
+  }
+
+  // Check if already used
+  if (data.used_at) {
+    throw new Error('This invitation code has already been used');
+  }
+
+  // Check if expired
+  if (new Date(data.expires_at) < new Date()) {
+    throw new Error('This invitation code has expired');
+  }
+
+  return data;
+}
+
+/**
+ * Sign up a kid or elder using an invitation code
+ */
+export async function signUpWithInvitation(
+  code: string,
+  email: string,
+  password: string,
+  name: string
+) {
+  if (!supabase) {
+    throw new Error('Supabase is not configured. Add environment variables to .env.local');
+  }
+
+  // Validate invitation
+  const invitation = await validateInvitation(code);
+
+  // Create auth user
+  const { data: authData, error: authError } = await supabase.auth.signUp({
+    email,
+    password,
+  });
+
+  if (authError) {
+    throw new Error(`Sign up failed: ${authError.message}`);
+  }
+
+  if (!authData.user) {
+    throw new Error('User creation failed');
+  }
+
+  // Create user profile with invitation details
+  const { error: profileError } = await supabase.from('user_profiles').insert([
+    {
+      id: authData.user.id,
+      email,
+      name,
+      role: invitation.role,
+      household_id: invitation.household_id,
+      invited_by: invitation.invited_by,
+      created_at: new Date().toISOString(),
+    },
+  ]);
+
+  if (profileError) {
+    throw new Error(`Profile creation failed: ${profileError.message}`);
+  }
+
+  // Mark invitation as used
+  const { error: updateError } = await supabase
+    .from('invitations')
+    .update({
+      used_at: new Date().toISOString(),
+      used_by: authData.user.id,
+    })
+    .eq('id', invitation.id);
+
+  if (updateError) {
+    console.error('Warning: Failed to mark invitation as used:', updateError.message);
+  }
+
+  return authData.user;
+}
+
+/**
+ * Get all pending invitations for a household
+ */
+export async function getInvitationsByHousehold(householdId: string) {
+  if (!supabase) {
+    throw new Error('Supabase is not configured. Add environment variables to .env.local');
+  }
+
+  const { data, error } = await supabase
+    .from('invitations')
+    .select('*')
+    .eq('household_id', householdId)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    throw new Error(`Failed to fetch invitations: ${error.message}`);
+  }
+
+  return data || [];
+}
+
+/**
+ * Get all members of a household
+ */
+export async function getUsersByHousehold(householdId: string) {
+  if (!supabase) {
+    throw new Error('Supabase is not configured. Add environment variables to .env.local');
+  }
+
+  const { data, error } = await supabase
+    .from('user_profiles')
+    .select('*')
+    .eq('household_id', householdId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to fetch household members: ${error.message}`);
+  }
+
+  return data || [];
+}
+
+/**
+ * Cancel an invitation (only if not used)
+ */
+export async function cancelInvitation(invitationId: string) {
+  if (!supabase) {
+    throw new Error('Supabase is not configured. Add environment variables to .env.local');
+  }
+
+  const { data, error } = await supabase
+    .from('invitations')
+    .delete()
+    .eq('id', invitationId)
+    .eq('used_at', null); // Only delete if not used
+
+  if (error) {
+    throw new Error(`Failed to cancel invitation: ${error.message}`);
   }
 
   return data;

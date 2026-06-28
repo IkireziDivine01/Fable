@@ -27,6 +27,14 @@ export function ArrowRightIcon(props: IconProps) {
   );
 }
 
+export function ArrowLeftIcon(props: IconProps) {
+  return (
+    <HeroIcon {...props}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 15.75 3 12m0 0 3.75-3.75M3 12h18" />
+    </HeroIcon>
+  );
+}
+
 export function BookOpenIcon(props: IconProps) {
   return (
     <HeroIcon {...props}>
