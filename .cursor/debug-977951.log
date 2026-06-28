@@ -1,0 +1,3 @@
+{"sessionId":"977951","location":"auth.ts:authorize:entry","message":"authorize called","data":{"hasEmail":true,"hasPassword":true,"passwordLen":11,"supabaseConfigured":true,"hasAuthSecret":true},"timestamp":1782508378986,"hypothesisId":"A,D,E"}
+{"sessionId":"977951","location":"auth.ts:authorize:supabase-ok","message":"supabase signIn succeeded","data":{"userId":"eda22412-e88c-4b93-a09f-81af547b09c9","emailConfirmed":true},"timestamp":1782508379325,"hypothesisId":"B","runId":"post-fix"}
+{"sessionId":"977951","location":"auth.ts:authorize:profile-ok","message":"authorize returning user","data":{"hasProfile":true,"role":"parent","householdId":"bc543b10-23d8-42fa-9768-d2d3d258deac"},"timestamp":1782508379614,"hypothesisId":"C","runId":"post-fix"}

@@ -22,7 +22,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           rel="stylesheet"
         />
       </head>
-      <body className="antialiased" style={{ WebkitFontSmoothing: 'antialiased' }}>
+      <body 
+        className="antialiased" 
+        style={{ WebkitFontSmoothing: 'antialiased' }}
+        suppressHydrationWarning
+      >
         <Providers>{children}</Providers>
       </body>
     </html>

@@ -19,6 +19,7 @@ export interface UserProfile {
   name?: string;
   localPin?: string;
   householdId: string;
+  invitedBy?: string;
   createdAt: number;
   updatedAt?: number;
 }
@@ -190,8 +191,9 @@ export const userSchema: RxJsonSchema<UserProfile> = {
     role: { type: 'string', enum: ['parent', 'kid', 'elder'], maxLength: 10 },
     email: { type: 'string', maxLength: 255 },
     name: { type: 'string', maxLength: 100 },
-    localPin: { type: 'string', maxLength: 10 }, // 4-digit PIN for local auth
-    householdId: { type: 'string', maxLength: 36 }, // Links all family members
+    localPin: { type: 'string', maxLength: 10 }, // Maps to 'local_pin' in Supabase
+    householdId: { type: 'string', maxLength: 36 }, // Maps to 'household_id' in Supabase
+    invitedBy: { type: 'string', maxLength: 36 }, // Maps to 'invited_by' in Supabase
     createdAt: {
       type: 'integer',
       multipleOf: 1,
@@ -206,7 +208,7 @@ export const userSchema: RxJsonSchema<UserProfile> = {
     },
   },
   required: ['id', 'role', 'householdId', 'createdAt'],
-  indexes: ['householdId', 'role', 'createdAt'],
+  indexes: ['householdId', 'role', 'createdAt', 'invitedBy'],
 };
 
 // ============================================================================

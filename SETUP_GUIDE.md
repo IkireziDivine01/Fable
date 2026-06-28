@@ -1,15 +1,30 @@
-# Fable Sign In/Sign Up Integration Guide
+# Fable Auth & Family Setup Guide
 
-I've successfully integrated sign in and sign up functionality with your Supabase database. Here's what was set up:
+## 🎯 System Overview - NEW: Parental Consent System
+
+### Account Types
+- **Parent/Guardian** - Creates household, invites family members
+- **Learner (Kid)** - Can only join via parent invitation code  
+- **Author** - Can only join via parent invitation code
+
+### Key Changes
+- ✅ Parents sign up directly at `/auth/signup`
+- ✅ Kids/Authors join via `/auth/onboard` with invitation code
+- ✅ Parents manage family members at `/parent/family`
+- ✅ Invitation codes expire after 30 days
+- ✅ Codes are one-time use only
 
 ## 🎯 What Was Completed
 
 ### 1. **Supabase Integration** (`src/lib/supabase.ts`)
    - Created reusable functions for authentication and database operations
-   - `signUpUser()` - Creates users and profiles in Supabase
+   - `signUpUser()` - Creates parent users and profiles
    - `signInUser()` - Authenticates with email and password
+   - `generateInvitation()` - Creates invitation codes (NEW)
+   - `validateInvitation()` - Validates invitation codes (NEW)
+   - `signUpWithInvitation()` - Signs up kids/authors with code (NEW)
    - `getStoriesByHousehold()` - Fetches family stories
-   - `createStory()` - Creates new stories in the database
+   - `getUsersByHousehold()` - Gets all household members (NEW)
 
 ### 2. **Updated Authentication** (`src/auth.ts`)
    - Connected NextAuth to Supabase for real authentication
@@ -18,25 +33,38 @@ I've successfully integrated sign in and sign up functionality with your Supabas
    - JWT callbacks pass session data through the app
 
 ### 3. **Sign Up Page** (`src/app/auth/signup/page.tsx`)
-   - Now creates actual users in Supabase
-   - Creates household if first user
-   - Shows error messages for validation failures
+   - Now creates parent accounts only
+   - Creates household if first parent
+   - Auto-redirects to sign in after successful signup
+   - Link to onboarding page for kids/authors with codes
+
+### 4. **Onboarding Page** (`src/app/auth/onboard/page.tsx`) - NEW
+   - Kids/Authors join with invitation code
+   - Two-step flow: validate code → create account
+   - Shows which parent invited them
    - Auto-redirects to sign in after successful signup
 
-### 4. **Sign In Page** (`src/app/auth/signin/page.tsx`)
-   - Simplified to just email/password (role set at signup)
-   - Validates against Supabase users
+### 5. **Family Management Page** (`src/parent/family/page.tsx`) - NEW
+   - Parents view all household members
+   - Generate invitation codes for kids/authors
+   - See pending/used invitations
+   - Copy codes to clipboard easily
+   - Manage family member lifecycle
+
+### 6. **Sign In Page** (`src/app/auth/signin/page.tsx`)
+   - Any account type can sign in
+   - Email and password required
    - Redirects to `/dashboard` after successful login
 
-### 5. **Dashboard Page** (`src/app/dashboard/page.tsx`)
-   - **Protected route** - only accessible after sign in
+### 7. **Dashboard Page** (`src/app/dashboard/page.tsx`)
+   - Protected route - only accessible after sign in
+   - Works for any account type (parent, kid, author)
    - Displays all stories for the user's household
    - Shows story status (draft/published)
-   - Quick access to create new stories
    - Sign out button in header
 
-### 6. **Middleware Protection** (`src/middleware.ts`)
-   - Updated to protect `/dashboard` and `/stories` routes
+### 8. **Middleware Protection** (`src/middleware.ts`)
+   - Updated to protect `/dashboard`, `/parent/family`, and `/stories` routes
    - Ensures only authenticated users can access
 
 ## 🚀 Setup Steps
@@ -47,6 +75,7 @@ Create a `.env.local` file in your project root with:
 ```env
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 NEXTAUTH_SECRET=generate_a_random_secret_here
 NEXTAUTH_URL=http://localhost:3000
 ```
@@ -55,7 +84,10 @@ NEXTAUTH_URL=http://localhost:3000
 1. Go to [supabase.com](https://supabase.com)
 2. Create or open your project
 3. Go to Settings → API
-4. Copy the Project URL and public anon key
+4. Copy:
+   - Project URL
+   - Public anon key
+   - **Service role key** (NEW - needed for parental invitations)
 
 **To generate NEXTAUTH_SECRET:**
 ```bash
@@ -67,24 +99,65 @@ openssl rand -base64 32
 Your Supabase database needs these tables:
 
 ```sql
--- Households table
+-- Create households table
 CREATE TABLE households (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   created_at TIMESTAMP DEFAULT NOW()
 );
 
--- User profiles table
+-- Create user profiles table (with new invited_by column for parental tracking)
 CREATE TABLE user_profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id),
   email TEXT,
   name TEXT,
-  role TEXT DEFAULT 'parent',
+  role TEXT DEFAULT 'parent' CHECK (role IN ('parent', 'kid', 'author')),
   household_id UUID REFERENCES households(id),
+  invited_by UUID REFERENCES auth.users(id),
+  approved_by UUID REFERENCES auth.users(id),
   created_at TIMESTAMP DEFAULT NOW()
 );
 
--- Row-level security policy for user_profiles
+-- Create invitations table (NEW - for parental consent)
+CREATE TABLE invitations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  household_id UUID NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+  code TEXT NOT NULL UNIQUE,
+  role TEXT NOT NULL CHECK (role IN ('kid', 'author')),
+  invited_by UUID NOT NULL REFERENCES auth.users(id),
+  name_hint TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  expires_at TIMESTAMP DEFAULT NOW() + INTERVAL '30 days',
+  used_at TIMESTAMP,
+  used_by UUID REFERENCES auth.users(id),
+  CONSTRAINT not_used_or_expired CHECK (used_at IS NULL OR used_at <= expires_at)
+);
+
+-- Create stories table
+CREATE TABLE stories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  household_id UUID REFERENCES households(id),
+  author_id UUID REFERENCES auth.users(id),
+  title TEXT NOT NULL,
+  status TEXT DEFAULT 'draft',
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Create story_sentences table
+CREATE TABLE story_sentences (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  story_id UUID REFERENCES stories(id),
+  sentence_text TEXT,
+  sentence_order INTEGER,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+### Step 3: Enable Row-Level Security (RLS)
+
+```sql
+-- Enable RLS on user_profiles
 ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Allow authenticated users to insert their own profile"
@@ -102,53 +175,72 @@ CREATE POLICY "Allow authenticated users to update their own profile"
   FOR UPDATE
   USING (auth.uid() = id);
 
--- If you see an error like "Could not find the table 'public.user_profiles' in the schema cache", create this table first.
+-- Enable RLS on invitations
+ALTER TABLE invitations ENABLE ROW LEVEL SECURITY;
 
--- Stories table
-CREATE TABLE stories (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  household_id UUID REFERENCES households(id),
-  author_id UUID REFERENCES auth.users(id),
-  title TEXT NOT NULL,
-  status TEXT DEFAULT 'draft',
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
+CREATE POLICY "Parents can view their household invitations"
+  ON invitations
+  FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM user_profiles
+      WHERE user_profiles.id = auth.uid()
+      AND user_profiles.household_id = invitations.household_id
+      AND user_profiles.role = 'parent'
+    )
+  );
 
--- Story sentences table
-CREATE TABLE story_sentences (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  story_id UUID REFERENCES stories(id),
-  sentence_text TEXT,
-  sentence_order INTEGER,
-  created_at TIMESTAMP DEFAULT NOW()
-);
+CREATE POLICY "Parents can create invitations for their household"
+  ON invitations
+  FOR INSERT
+  WITH CHECK (
+    invited_by = auth.uid()
+    AND EXISTS (
+      SELECT 1 FROM user_profiles
+      WHERE user_profiles.id = auth.uid()
+      AND user_profiles.household_id = invitations.household_id
+      AND user_profiles.role = 'parent'
+    )
+  );
 ```
 
-### Step 3: Run Your App
+### Step 4: Run Your App
 ```bash
 npm run dev
 ```
 
 Visit:
-- **Signup**: `http://localhost:3000/auth/signup`
+- **Parent Signup**: `http://localhost:3000/auth/signup`
+- **Kid/Author Onboard**: `http://localhost:3000/auth/onboard`
 - **Sign In**: `http://localhost:3000/auth/signin`
-- **Dashboard**: `http://localhost:3000/dashboard`
+- **Family Dashboard**: `http://localhost:3000/parent/family` (parents only)
+- **Story Dashboard**: `http://localhost:3000/dashboard`
 
 ## 🔄 How It Works
 
-### Signup Flow
-1. User fills form with name, email, password, household name
+### Parent Signup Flow
+1. Parent fills form with name, household name, email, password
 2. `signUpUser()` creates auth user in Supabase
 3. Creates household if new
-4. Creates user_profile record linking user to household
+4. Creates user_profile with role='parent' linking to household
 5. Redirects to signin
+
+### Kid/Author Onboarding Flow
+1. Kid/Author visits `/auth/onboard`
+2. Enters invitation code from parent
+3. `validateInvitation()` checks code is valid, not expired, not used
+4. System creates auth user and profile with:
+   - role from invitation (kid or author)
+   - invited_by set to parent's ID
+   - household_id from invitation
+5. Marks invitation as used_at=now, used_by=kid's ID
+6. Redirects to signin
 
 ### Signin Flow
 1. User enters email and password
 2. `signInUser()` validates with Supabase
 3. `getUserProfile()` fetches user's profile and household
-4. NextAuth session stores `householdId` for queries
+4. NextAuth session stores `householdId` and `role` for queries
 5. Redirects to dashboard
 
 ### Dashboard Flow
