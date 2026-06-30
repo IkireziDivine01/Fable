@@ -11,6 +11,7 @@ interface Story {
   title: string;
   status: string;
   created_at: string;
+  is_immersive?: boolean;
 }
 
 export default function ParentDashboard() {
@@ -108,6 +109,12 @@ export default function ParentDashboard() {
                   <p className="mt-1 font-body-sm text-sm text-[#857278]">
                     {story.status} · {new Date(story.created_at).toLocaleDateString()}
                   </p>
+                  <Link
+                    href={`/parent/story/${story.id}/immersive`}
+                    className="mt-3 inline-block font-label-sm uppercase tracking-widest text-[#520e33] hover:text-[#FF7956]"
+                  >
+                    Immersive setup →
+                  </Link>
                 </div>
               ))}
             </div>

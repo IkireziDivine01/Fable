@@ -77,6 +77,9 @@ export default function ElderDashboardPage() {
                     <Link href={`/elder/story/${story.id}/preview`}>
                       <StoryButton variant="ghost">Preview</StoryButton>
                     </Link>
+                    <Link href={`/elder/story/${story.id}/immersive`}>
+                      <StoryButton variant="ghost">Immersive</StoryButton>
+                    </Link>
                   </div>
                 </li>
               ))}

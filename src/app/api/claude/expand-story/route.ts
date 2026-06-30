@@ -1,5 +1,5 @@
 import { expandTwoSentences } from '@/lib/claude';
-import { parseClaudeJson, validateGeneratedStory } from '@/lib/storyHelpers';
+import { validateGeneratedStory } from '@/lib/storyHelpers';
 import { auth } from '@/auth';
 import { normalizeRole } from '@/lib/roles';
 import { getProfileById } from '@/lib/auth-server';
@@ -25,8 +25,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Both sentences are required' }, { status: 400 });
     }
 
-    const raw = await expandTwoSentences(sentenceOne, sentenceTwo);
-    const parsed = parseClaudeJson(raw);
+    const parsed = await expandTwoSentences(sentenceOne, sentenceTwo);
     const story = validateGeneratedStory(parsed);
 
     return NextResponse.json({ story });
