@@ -19,6 +19,7 @@ interface KidStoryReaderProps {
   storyId: string;
   title: string;
   sentences: KidSentence[];
+  isImmersive?: boolean;
   onComplete?: () => void;
 }
 
@@ -26,6 +27,7 @@ export default function KidStoryReader({
   storyId,
   title,
   sentences,
+  isImmersive = false,
   onComplete,
 }: KidStoryReaderProps) {
   const [index, setIndex] = useState(0);
@@ -92,6 +94,15 @@ export default function KidStoryReader({
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-6 md:py-10">
+      {isImmersive && (
+        <Link
+          href={`/kid/story/${storyId}/immersive`}
+          className="mb-6 flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#520e33] font-label-sm tracking-widest text-[#ffdbd2] ring-1 ring-[#C4A574]/30 hover:bg-[#33001d]"
+        >
+          ✦ Enter immersive world
+        </Link>
+      )}
+
       <div className="mb-8 text-center">
         <p className="mb-1 font-label-sm uppercase tracking-[0.25em] text-[#857278]">{title}</p>
         <div className="mt-4 flex justify-center gap-2">

@@ -10,6 +10,7 @@ interface Story {
   title: string;
   status: string;
   generation_type?: string | null;
+  is_immersive?: boolean | null;
   created_at: string;
 }
 
@@ -34,15 +35,26 @@ export default function KidLibraryPage() {
       <StoryPanel className="mb-10 overflow-hidden !p-0">
         <div className="grid md:grid-cols-[1fr_0.9fr]">
           <div className="p-8 md:p-10">
-            <StoryEyebrow>Reading room</StoryEyebrow>
-            <StoryTitle>Pick a story and dive in.</StoryTitle>
-            <StoryLead>
-              Read one sentence at a time, hear voices from home, and celebrate when you reach the end.
+            <StoryEyebrow>Reading room · Akarima k&apos;inkuru</StoryEyebrow>
+            <StoryTitle>Pick a story and enter its world.</StoryTitle>
+            <StoryLead className="!mb-0">
+              Read quietly, step into immersive scenes, or hear family voices sentence by sentence.
             </StoryLead>
           </div>
           <div className="relative hidden min-h-[180px] bg-[#520e33] md:block">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,219,210,0.25),_transparent_50%)]" />
-            <div className="absolute bottom-8 left-8 text-6xl opacity-90">📚</div>
+            <div
+              className="absolute inset-0 opacity-20"
+              style={{
+                backgroundImage: `repeating-linear-gradient(
+                  45deg,
+                  transparent,
+                  transparent 12px,
+                  rgba(196, 165, 116, 0.15) 12px,
+                  rgba(196, 165, 116, 0.15) 13px
+                )`,
+              }}
+            />
           </div>
         </div>
       </StoryPanel>
@@ -60,24 +72,35 @@ export default function KidLibraryPage() {
       ) : (
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {stories.map((story) => (
-            <Link
+            <article
               key={story.id}
-              href={`/kid/story/${story.id}`}
               className="group rounded-2xl border border-[#e9d7d0] bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:border-[#FF7956]/35 hover:shadow-lg hover:shadow-[#520e33]/10"
             >
               <div className="mb-4 flex h-24 items-center justify-center rounded-xl bg-[#fff8f5] ring-1 ring-[#e9d7d0] transition group-hover:bg-[#ffdbd2]/30">
                 <BookOpenIcon className="h-10 w-10 text-[#FF7956]" />
               </div>
-              {story.generation_type === 'ai' && (
-                <span className="mb-2 inline-block rounded-full bg-[#ffdbd2] px-3 py-1 font-label-sm text-label-sm uppercase tracking-widest text-[#520e33]">
-                  AI
-                </span>
-              )}
+              <div className="mb-2 flex flex-wrap gap-2">
+                {story.generation_type === 'ai' && (
+                  <span className="rounded-full bg-[#ffdbd2] px-3 py-1 font-label-sm uppercase tracking-widest text-[#520e33]">
+                    AI
+                  </span>
+                )}
+                {story.is_immersive && (
+                  <span className="rounded-full bg-[#520e33] px-3 py-1 font-label-sm uppercase tracking-widest text-[#ffdbd2]">
+                    Immersive
+                  </span>
+                )}
+              </div>
               <h3 className="font-headline-md text-headline-md text-[#1e1b18] group-hover:text-[#520e33]">
                 {story.title}
               </h3>
-              <p className="mt-2 font-label-sm uppercase tracking-widest text-[#857278]">Tap to read →</p>
-            </Link>
+              <Link
+                href={`/kid/story/${story.id}`}
+                className="mt-4 block min-h-11 rounded-xl border border-[#e9d7d0] bg-[#fff8f5] px-4 py-2 text-center font-label-sm uppercase tracking-widest text-[#524348] hover:border-[#520e33]"
+              >
+                Read
+              </Link>
+            </article>
           ))}
         </div>
       )}

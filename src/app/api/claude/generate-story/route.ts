@@ -1,5 +1,5 @@
 import { generateStoryFromPrompt } from '@/lib/claude';
-import { parseClaudeJson, validateGeneratedStory } from '@/lib/storyHelpers';
+import { validateGeneratedStory } from '@/lib/storyHelpers';
 import { auth } from '@/auth';
 import { normalizeRole } from '@/lib/roles';
 import { getProfileById } from '@/lib/auth-server';
@@ -23,8 +23,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Prompt is required' }, { status: 400 });
     }
 
-    const raw = await generateStoryFromPrompt(prompt);
-    const parsed = parseClaudeJson(raw);
+    const parsed = await generateStoryFromPrompt(prompt);
     const story = validateGeneratedStory(parsed);
 
     return NextResponse.json({ story });

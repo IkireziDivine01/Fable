@@ -18,6 +18,11 @@ function mapStory(row: Record<string, unknown>): StoryRecord {
     audio_url: (row.audio_url as string) ?? null,
     generation_type: (row.generation_type as StoryGenerationType) ?? null,
     themes: Array.isArray(row.themes) ? (row.themes as string[]) : null,
+    environment: (row.environment as string) ?? null,
+    characters: row.characters ?? null,
+    video_url: (row.video_url as string) ?? null,
+    is_immersive: row.is_immersive != null ? Boolean(row.is_immersive) : null,
+    animation_data: row.animation_data ?? null,
     created_at: String(row.created_at),
     updated_at: (row.updated_at as string) ?? null,
   };
@@ -159,7 +164,7 @@ export async function listStoriesForHousehold(
 ) {
   let query = supabaseAdmin
     .from('stories')
-    .select('id, title, status, created_at, author_id, generation_type, themes, transcript')
+    .select('id, title, status, created_at, author_id, generation_type, themes, transcript, is_immersive, environment')
     .eq('household_id', householdId)
     .order('created_at', { ascending: false });
 

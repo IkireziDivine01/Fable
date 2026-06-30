@@ -31,6 +31,11 @@ export interface StoryRecord {
   audio_url?: string | null;
   generation_type?: StoryGenerationType | null;
   themes?: string[] | null;
+  environment?: string | null;
+  characters?: unknown;
+  video_url?: string | null;
+  is_immersive?: boolean | null;
+  animation_data?: unknown;
   created_at: string;
   updated_at?: string | null;
 }
@@ -86,17 +91,35 @@ export function validateGeneratedStory(data: unknown): GeneratedStoryPayload {
   if (Array.isArray(obj.sentences) && obj.sentences.length > 0) {
     sentences = obj.sentences.map((item, index) => {
       const row = item as Record<string, unknown>;
+      const sentenceText = String(
+        row.text ?? row.sentenceText ?? row.sentence_text ?? ''
+      ).trim();
       return {
-        sentenceText: String(row.text ?? row.sentenceText ?? '').trim(),
-        sentenceOrder: typeof row.order === 'number' ? row.order : index,
-        themeLabel: row.theme ? String(row.theme) : themes[0],
-        kinyarwandaText: row.kinyarwandaText ? String(row.kinyarwandaText) : undefined,
+        sentenceText,
+        sentenceOrder:
+          typeof row.order === 'number'
+            ? row.order
+            : typeof row.sentence_order === 'number'
+              ? row.sentence_order
+              : index,
+        themeLabel: String(row.theme ?? row.themeLabel ?? row.theme_label ?? themes[0] ?? 'Ubuntu'),
+        kinyarwandaText: row.kinyarwandaText
+          ? String(row.kinyarwandaText)
+          : row.kinyarwanda_text
+            ? String(row.kinyarwanda_text)
+            : undefined,
         elderTalkingPoints: row.elderTalkingPoints
           ? String(row.elderTalkingPoints)
-          : undefined,
-        childPrompt: row.childPrompt ? String(row.childPrompt) : undefined,
+          : row.elder_talking_points
+            ? String(row.elder_talking_points)
+            : undefined,
+        childPrompt: row.childPrompt
+          ? String(row.childPrompt)
+          : row.child_prompt
+            ? String(row.child_prompt)
+            : undefined,
       };
-    });
+    }).filter((s) => s.sentenceText.length > 0);
   } else if (transcript) {
     sentences = buildSentencesFromTranscript(transcript, themes);
   }
@@ -118,14 +141,37 @@ export function validateGeneratedStory(data: unknown): GeneratedStoryPayload {
 
 export function parseClaudeJson(content: string): unknown {
   const trimmed = content.trim();
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
-  const jsonText = fenced ? fenced[1].trim() : trimmed;
+  const candidates: string[] = [trimmed];
 
-  try {
-    return JSON.parse(jsonText);
-  } catch {
-    throw new Error('Could not parse AI response. Try regenerating.');
+  const fencedBlocks = [...trimmed.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)];
+  for (const match of fencedBlocks) {
+    if (match[1]?.trim()) candidates.push(match[1].trim());
   }
+
+  const firstBrace = trimmed.indexOf('{');
+  const lastBrace = trimmed.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    candidates.push(trimmed.slice(firstBrace, lastBrace + 1));
+  }
+
+  const errors: string[] = [];
+
+  for (const candidate of candidates) {
+    const normalized = candidate
+      .replace(/,\s*([}\]])/g, '$1')
+      .replace(/[\u201C\u201D]/g, '"')
+      .replace(/[\u2018\u2019]/g, "'");
+
+    try {
+      return JSON.parse(normalized);
+    } catch (err) {
+      errors.push(err instanceof Error ? err.message : 'parse failed');
+    }
+  }
+
+  throw new Error(
+    'Could not parse AI response. Try regenerating with a shorter or clearer prompt.'
+  );
 }
 
 export async function mirrorStoryToRxDB(
