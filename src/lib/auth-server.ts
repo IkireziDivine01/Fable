@@ -371,6 +371,12 @@ export async function listHouseholdMembers(householdId: string) {
   return data ?? [];
 }
 
+/** Learners in a household — matches family page logic (kid + legacy learner role). */
+export async function listHouseholdLearners(householdId: string) {
+  const members = (await listHouseholdMembers(householdId)) as unknown as Record<string, unknown>[];
+  return members.filter((member) => normalizeRole(String(member.role)) === 'kid');
+}
+
 export async function listHouseholdInvitations(householdId: string) {
   const { data, error } = await supabaseAdmin
     .from('invitations')

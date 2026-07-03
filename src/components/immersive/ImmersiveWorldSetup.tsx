@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect } from 'react';
-import ImmersivePreviewPanel from './ImmersivePreviewPanel';
-import { storyInputClass } from '@/components/story/StoryShell';
+import ImmersiveWorldPreview from './ImmersiveWorldPreview';
+import { storyInputClass, storyTextareaClass } from '@/components/story/StoryShell';
 import {
   CHARACTER_META,
   CHARACTER_TYPES,
@@ -10,32 +10,44 @@ import {
   ENVIRONMENT_PRESETS,
 } from '@/lib/immersive/presets';
 import { useImmersiveStore } from '@/lib/immersive/store';
-import type { CharacterType, EnvironmentType, StoryCharacterSlot } from '@/lib/immersive/types';
+import type { CharacterType, EnvironmentType, StoryCharacterSlot, StorySceneSpec } from '@/lib/immersive/types';
+import type { StorySentenceInput } from '@/lib/storyHelpers';
 
 interface ImmersiveWorldSetupProps {
   environment: EnvironmentType;
+  environmentDescription?: string;
+  sceneSpec?: StorySceneSpec | null;
   characters: StoryCharacterSlot[];
   useAiVoice: boolean;
   onEnvironmentChange: (env: EnvironmentType) => void;
+  onEnvironmentDescriptionChange?: (value: string) => void;
   onCharactersChange: (chars: StoryCharacterSlot[]) => void;
   onUseAiVoiceChange: (value: boolean) => void;
   previewText?: string;
+  showAiDescriptions?: boolean;
+  storyTitle?: string;
+  storySentences?: StorySentenceInput[];
 }
 
 export default function ImmersiveWorldSetup({
   environment,
+  environmentDescription = '',
+  sceneSpec = null,
   characters,
   useAiVoice,
   onEnvironmentChange,
+  onEnvironmentDescriptionChange,
   onCharactersChange,
   onUseAiVoiceChange,
-  previewText,
+  showAiDescriptions = false,
+  storyTitle = 'Your story',
+  storySentences = [],
 }: ImmersiveWorldSetupProps) {
   const setPreviewWorld = useImmersiveStore((s) => s.setPreviewWorld);
 
   useEffect(() => {
-    setPreviewWorld({ environment, characters, useAiVoice });
-  }, [environment, characters, useAiVoice, setPreviewWorld]);
+    setPreviewWorld({ environment, characters, sceneSpec, useAiVoice, worldPreview: true });
+  }, [environment, characters, sceneSpec, useAiVoice, setPreviewWorld]);
 
   const addCharacter = () => {
     if (characters.length >= 3) return;
@@ -56,11 +68,13 @@ export default function ImmersiveWorldSetup({
 
   return (
     <div className="space-y-6">
-      <ImmersivePreviewPanel
+      <ImmersiveWorldPreview
         environment={environment}
+        environmentDescription={environmentDescription}
+        sceneSpec={sceneSpec}
         characters={characters}
-        previewText={previewText}
-        heightClass="h-[360px] md:h-[420px]"
+        sentences={storySentences}
+        storyTitle={storyTitle}
       />
 
       <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-[#e9d7d0] bg-[#fff8f5] p-4">
@@ -108,6 +122,20 @@ export default function ImmersiveWorldSetup({
             );
           })}
         </div>
+        {showAiDescriptions && onEnvironmentDescriptionChange && (
+          <label className="mt-4 block">
+            <span className="mb-2 block font-label-sm uppercase tracking-widest text-[#857278]">
+              Setting description
+            </span>
+            <textarea
+              value={environmentDescription}
+              onChange={(e) => onEnvironmentDescriptionChange(e.target.value)}
+              rows={3}
+              className={storyTextareaClass}
+              placeholder="Describe the world your family will enter…"
+            />
+          </label>
+        )}
       </div>
 
       <div>
@@ -118,35 +146,46 @@ export default function ImmersiveWorldSetup({
           {characters.map((char, index) => (
             <div
               key={index}
-              className="grid gap-3 rounded-xl border border-[#e9d7d0] bg-[#fff8f5] p-4 sm:grid-cols-[1fr_1fr_auto]"
+              className="space-y-3 rounded-xl border border-[#e9d7d0] bg-[#fff8f5] p-4"
             >
-              <input
-                value={char.name}
-                onChange={(e) => updateCharacter(index, { name: e.target.value })}
-                placeholder="Name"
-                className={storyInputClass}
-              />
-              <select
-                value={char.type}
-                onChange={(e) =>
-                  updateCharacter(index, { type: e.target.value as CharacterType })
-                }
-                className={storyInputClass}
-              >
-                {CHARACTER_TYPES.map((type) => (
-                  <option key={type} value={type}>
-                    {CHARACTER_META[type].label}
-                  </option>
-                ))}
-              </select>
-              {characters.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => removeCharacter(index)}
-                  className="min-h-12 rounded-xl border border-[#e9d7d0] px-3 text-sm text-[#857278]"
+              <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+                <input
+                  value={char.name}
+                  onChange={(e) => updateCharacter(index, { name: e.target.value })}
+                  placeholder="Name"
+                  className={storyInputClass}
+                />
+                <select
+                  value={char.type}
+                  onChange={(e) =>
+                    updateCharacter(index, { type: e.target.value as CharacterType })
+                  }
+                  className={storyInputClass}
                 >
-                  Remove
-                </button>
+                  {CHARACTER_TYPES.map((type) => (
+                    <option key={type} value={type}>
+                      {CHARACTER_META[type].label}
+                    </option>
+                  ))}
+                </select>
+                {characters.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeCharacter(index)}
+                    className="min-h-12 rounded-xl border border-[#e9d7d0] px-3 text-sm text-[#857278]"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+              {showAiDescriptions && (
+                <textarea
+                  value={char.description ?? ''}
+                  onChange={(e) => updateCharacter(index, { description: e.target.value })}
+                  rows={2}
+                  className={storyTextareaClass}
+                  placeholder="Who is this character in the story?"
+                />
               )}
             </div>
           ))}

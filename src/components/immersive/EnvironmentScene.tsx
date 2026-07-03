@@ -1,20 +1,52 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import { Float, Stars } from '@react-three/drei';
-import { useEnvironmentPreset } from '@/lib/immersive/store';
+import { useFrame } from '@react-three/fiber';
+import type { Group } from 'three';
+import { useEnvironmentPreset, useImmersiveStore } from '@/lib/immersive/store';
 
-function PropMesh({ type, position }: { type: string; position: [number, number, number] }) {
+function PropMesh({
+  type,
+  position,
+  animate,
+  accentColor,
+  scale = 1,
+}: {
+  type: string;
+  position: [number, number, number];
+  animate: boolean;
+  accentColor: string;
+  scale?: number;
+}) {
+  const groupRef = useRef<Group>(null);
+  const scaledPosition: [number, number, number] = [
+    position[0],
+    position[1],
+    position[2],
+  ];
+
+  useFrame((state) => {
+    if (!animate || !groupRef.current) return;
+    const t = state.clock.elapsedTime;
+    if (type === 'tree') {
+      groupRef.current.rotation.z = Math.sin(t * 0.8 + position[0]) * 0.04;
+    }
+    if (type === 'stall' || type === 'flower') {
+      groupRef.current.position.y = position[1] + Math.sin(t * 1.2 + position[0]) * 0.015;
+    }
+  });
+
   if (type === 'tree') {
     return (
-      <group position={position}>
+      <group ref={groupRef} position={scaledPosition} scale={scale}>
         <mesh position={[0, 0.4, 0]} castShadow>
           <cylinderGeometry args={[0.08, 0.12, 0.8, 6]} />
           <meshStandardMaterial color="#4a3728" />
         </mesh>
         <mesh position={[0, 1.1, 0]} castShadow>
           <coneGeometry args={[0.55, 1.2, 6]} />
-          <meshStandardMaterial color="#2D5016" flatShading />
+          <meshStandardMaterial color={accentColor} flatShading />
         </mesh>
       </group>
     );
@@ -22,14 +54,14 @@ function PropMesh({ type, position }: { type: string; position: [number, number,
 
   if (type === 'hut') {
     return (
-      <group position={position}>
+      <group position={scaledPosition} scale={scale}>
         <mesh position={[0, 0.35, 0]}>
           <cylinderGeometry args={[0.5, 0.55, 0.7, 8]} />
           <meshStandardMaterial color="#8B6914" flatShading />
         </mesh>
         <mesh position={[0, 0.85, 0]}>
           <coneGeometry args={[0.75, 0.5, 8]} />
-          <meshStandardMaterial color="#520e33" flatShading />
+          <meshStandardMaterial color={accentColor} flatShading />
         </mesh>
       </group>
     );
@@ -38,20 +70,22 @@ function PropMesh({ type, position }: { type: string; position: [number, number,
   if (type === 'fire') {
     return (
       <Float speed={2} floatIntensity={0.4}>
-        <mesh position={position}>
-          <sphereGeometry args={[0.15, 8, 8]} />
-          <meshStandardMaterial color="#FF7956" emissive="#FF7956" emissiveIntensity={0.8} />
-        </mesh>
+        <group position={scaledPosition} scale={scale}>
+          <mesh>
+            <sphereGeometry args={[0.15, 8, 8]} />
+            <meshStandardMaterial color={accentColor} emissive={accentColor} emissiveIntensity={0.8} />
+          </mesh>
+        </group>
       </Float>
     );
   }
 
   if (type === 'stall') {
     return (
-      <group position={position}>
+      <group ref={groupRef} position={scaledPosition} scale={scale}>
         <mesh position={[0, 0.5, 0]}>
           <boxGeometry args={[0.9, 0.08, 0.6]} />
-          <meshStandardMaterial color="#DD6B20" />
+          <meshStandardMaterial color={accentColor} />
         </mesh>
         <mesh position={[0, 0.25, 0]}>
           <boxGeometry args={[0.7, 0.5, 0.5]} />
@@ -63,10 +97,55 @@ function PropMesh({ type, position }: { type: string; position: [number, number,
 
   if (type === 'board') {
     return (
-      <mesh position={position}>
-        <boxGeometry args={[1.4, 0.9, 0.06]} />
-        <meshStandardMaterial color="#2C5282" />
+      <group position={scaledPosition} scale={scale}>
+        <mesh>
+          <boxGeometry args={[1.4, 0.9, 0.06]} />
+          <meshStandardMaterial color={accentColor} />
+        </mesh>
+      </group>
+    );
+  }
+
+  if (type === 'rock') {
+    return (
+      <mesh position={scaledPosition} scale={scale} castShadow>
+        <dodecahedronGeometry args={[0.28, 0]} />
+        <meshStandardMaterial color={accentColor} flatShading roughness={0.85} />
       </mesh>
+    );
+  }
+
+  if (type === 'flower') {
+    return (
+      <group ref={groupRef} position={scaledPosition} scale={scale}>
+        <mesh position={[0, 0.12, 0]}>
+          <cylinderGeometry args={[0.02, 0.025, 0.24, 6]} />
+          <meshStandardMaterial color="#40916C" />
+        </mesh>
+        <mesh position={[0, 0.28, 0]}>
+          <sphereGeometry args={[0.1, 8, 8]} />
+          <meshStandardMaterial color={accentColor} emissive={accentColor} emissiveIntensity={0.15} />
+        </mesh>
+      </group>
+    );
+  }
+
+  if (type === 'bench') {
+    return (
+      <group position={scaledPosition} scale={scale}>
+        <mesh position={[0, 0.18, 0]}>
+          <boxGeometry args={[0.9, 0.06, 0.35]} />
+          <meshStandardMaterial color="#6b3a2a" />
+        </mesh>
+        <mesh position={[-0.32, 0.08, 0]}>
+          <boxGeometry args={[0.06, 0.16, 0.3]} />
+          <meshStandardMaterial color={accentColor} />
+        </mesh>
+        <mesh position={[0.32, 0.08, 0]}>
+          <boxGeometry args={[0.06, 0.16, 0.3]} />
+          <meshStandardMaterial color={accentColor} />
+        </mesh>
+      </group>
     );
   }
 
@@ -75,12 +154,14 @@ function PropMesh({ type, position }: { type: string; position: [number, number,
 
 export default function EnvironmentScene() {
   const preset = useEnvironmentPreset();
+  const worldPreviewActive = useImmersiveStore((s) => s.worldPreviewActive);
 
   const objects = useMemo(
     () =>
       preset.objects.map((obj) => ({
         type: obj.type,
         position: [obj.x, 0, obj.z ?? -1.5] as [number, number, number],
+        scale: obj.scale ?? 1,
       })),
     [preset.objects]
   );
@@ -118,7 +199,14 @@ export default function EnvironmentScene() {
       </mesh>
 
       {objects.map((obj, i) => (
-        <PropMesh key={`${obj.type}-${i}`} type={obj.type} position={obj.position} />
+        <PropMesh
+          key={`${obj.type}-${i}`}
+          type={obj.type}
+          position={obj.position}
+          scale={obj.scale}
+          accentColor={preset.accentColor ?? '#520e33'}
+          animate={worldPreviewActive}
+        />
       ))}
     </>
   );

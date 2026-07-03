@@ -1,8 +1,11 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import EditableStoryPreview from '@/components/story/EditableStoryPreview';
+import StoryExperiencePreview from '@/components/story/StoryExperiencePreview';
 import SentenceAudioRecorder from '@/components/story/SentenceAudioRecorder';
+import StoryGenerationScreen from '@/components/story/StoryGenerationScreen';
+import StoryWizardProgress from '@/components/story/StoryWizardProgress';
 import ImmersiveWorldSetup from '@/components/immersive/ImmersiveWorldSetup';
 import {
   StoryAlert,
@@ -14,8 +17,7 @@ import {
   storyInputClass,
   storyTextareaClass,
 } from '@/components/story/StoryShell';
-import { ENVIRONMENT_LABELS, CHARACTER_META } from '@/lib/immersive/presets';
-import type { EnvironmentType, StoryCharacterSlot } from '@/lib/immersive/types';
+import type { EnvironmentType, StoryCharacterSlot, StorySceneSpec } from '@/lib/immersive/types';
 import type { GeneratedStoryPayload } from '@/lib/storyHelpers';
 
 interface SavedSentence {
@@ -30,7 +32,7 @@ export interface SaveDraftResult {
   sentences: SavedSentence[];
 }
 
-type WizardStep = 'world' | 'prompt' | 'review' | 'edit' | 'voice';
+type WizardStep = 'prompt' | 'review' | 'generating' | 'edit' | 'world' | 'preview' | 'voice';
 
 interface AIStoryGeneratorProps {
   apiPath: '/api/claude/generate-story' | '/api/claude/expand-story';
@@ -40,13 +42,31 @@ interface AIStoryGeneratorProps {
   onPublished: (storyId: string) => void;
 }
 
-const STEP_LABELS: Record<WizardStep, string> = {
-  world: '1 · World',
-  prompt: '2 · Prompt',
-  review: '3 · Review',
-  edit: '4 · Edit',
-  voice: '5 · Voice',
-};
+function applyStoryWorld(story: GeneratedStoryPayload): {
+  environment: EnvironmentType;
+  environmentDescription: string;
+  sceneSpec: StorySceneSpec | null;
+  characters: StoryCharacterSlot[];
+} {
+  const environment = story.environment ?? 'village';
+  return {
+    environment,
+    environmentDescription: story.environmentDescription ?? '',
+    sceneSpec: story.sceneSpec ?? null,
+    characters:
+      story.characters && story.characters.length > 0
+        ? story.characters.map((c, i) => ({ ...c, position: i + 1 }))
+        : [{ name: 'Grandmother', type: 'grandma', position: 1 }],
+  };
+}
+
+function promptPreviewText(values: Record<string, string>): string {
+  return (
+    values.prompt?.trim() ||
+    [values.sentenceOne, values.sentenceTwo].filter((v) => v?.trim()).join(' · ') ||
+    ''
+  );
+}
 
 export default function AIStoryGenerator({
   apiPath,
@@ -55,8 +75,8 @@ export default function AIStoryGenerator({
   onSaveDraft,
   onPublished,
 }: AIStoryGeneratorProps) {
-  const [step, setStep] = useState<WizardStep>('world');
-  const [loading, setLoading] = useState(false);
+  const [step, setStep] = useState<WizardStep>('prompt');
+  const [generationProgress, setGenerationProgress] = useState<number | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState('');
   const [story, setStory] = useState<GeneratedStoryPayload | null>(null);
@@ -64,20 +84,16 @@ export default function AIStoryGenerator({
   const [formValues, setFormValues] = useState(payload);
 
   const [environment, setEnvironment] = useState<EnvironmentType>('village');
+  const [environmentDescription, setEnvironmentDescription] = useState('');
+  const [sceneSpec, setSceneSpec] = useState<StorySceneSpec | null>(null);
   const [characters, setCharacters] = useState<StoryCharacterSlot[]>([
     { name: 'Grandmother', type: 'grandma', position: 1 },
   ]);
   const [useAiVoice, setUseAiVoice] = useState(false);
 
-  const promptPreview = useMemo(() => {
-    const parts = Object.entries(formValues)
-      .filter(([, v]) => v.trim())
-      .map(([, v]) => v);
-    return parts[0]?.slice(0, 80) ?? 'Your story will unfold here…';
-  }, [formValues]);
-
   const generate = async () => {
-    setLoading(true);
+    setStep('generating');
+    setGenerationProgress(null);
     setError('');
 
     try {
@@ -88,12 +104,23 @@ export default function AIStoryGenerator({
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Generation failed');
-      setStory(result.story);
+
+      setGenerationProgress(100);
+      await new Promise((r) => window.setTimeout(r, 450));
+
+      const generated = result.story as GeneratedStoryPayload;
+      const world = applyStoryWorld(generated);
+      setStory(generated);
+      setEnvironment(world.environment);
+      setEnvironmentDescription(world.environmentDescription);
+      setSceneSpec(world.sceneSpec);
+      setCharacters(world.characters);
       setStep('edit');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Generation failed');
+      setStep('review');
     } finally {
-      setLoading(false);
+      setGenerationProgress(null);
     }
   };
 
@@ -105,7 +132,12 @@ export default function AIStoryGenerator({
         environment,
         characters: characters.filter((c) => c.name.trim()),
         isImmersive: true,
-        animationData: { version: 1, useAiVoice },
+        animationData: {
+          version: 1,
+          useAiVoice,
+          environmentDescription: environmentDescription.trim() || undefined,
+          sceneSpec: sceneSpec ?? undefined,
+        },
       }),
     });
     const result = await response.json();
@@ -152,62 +184,19 @@ export default function AIStoryGenerator({
     }
   };
 
-  const canAdvanceFromWorld = characters.some((c) => c.name.trim());
   const canAdvanceFromPrompt = Object.values(formValues).some((v) => v.trim().length > 10);
+  const canAdvanceFromWorld = characters.some((c) => c.name.trim());
+  const isGenerating = step === 'generating';
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap gap-2">
-        {(Object.keys(STEP_LABELS) as WizardStep[]).map((key) => {
-          const active = step === key;
-          const done =
-            (key === 'world' && step !== 'world') ||
-            (key === 'prompt' && ['review', 'edit', 'voice'].includes(step)) ||
-            (key === 'review' && ['edit', 'voice'].includes(step)) ||
-            (key === 'edit' && step === 'voice');
-          return (
-            <span
-              key={key}
-              className={`rounded-full px-3 py-1 font-label-sm uppercase tracking-widest ${
-                active
-                  ? 'bg-[#520e33] text-[#ffdbd2]'
-                  : done
-                    ? 'bg-[#ffdbd2] text-[#520e33]'
-                    : 'bg-[#fff8f5] text-[#857278] ring-1 ring-[#e9d7d0]'
-              }`}
-            >
-              {STEP_LABELS[key]}
-            </span>
-          );
-        })}
-      </div>
+      <StoryWizardProgress currentStep={step} generating={isGenerating} />
 
-      {step === 'world' && (
-        <StoryPanel>
-          <StoryEyebrow>{promptLabel} · Immersive</StoryEyebrow>
-          <StoryTitle>Design the world first</StoryTitle>
-          <StoryLead>
-            Choose where your story lives and who tells it. This 3D scene is what learners enter —
-            preview it before writing a single word.
-          </StoryLead>
-          <ImmersiveWorldSetup
-            environment={environment}
-            characters={characters}
-            useAiVoice={useAiVoice}
-            onEnvironmentChange={setEnvironment}
-            onCharactersChange={setCharacters}
-            onUseAiVoiceChange={setUseAiVoice}
-            previewText={promptPreview}
-          />
-          {error && <StoryAlert message={error} />}
-          <StoryButton
-            onClick={() => setStep('prompt')}
-            disabled={!canAdvanceFromWorld}
-            className="mt-6 w-full"
-          >
-            Continue to story prompt
-          </StoryButton>
-        </StoryPanel>
+      {step === 'generating' && (
+        <StoryGenerationScreen
+          promptPreview={promptPreviewText(formValues)}
+          progressOverride={generationProgress}
+        />
       )}
 
       {step === 'prompt' && (
@@ -215,8 +204,8 @@ export default function AIStoryGenerator({
           <StoryEyebrow>{promptLabel}</StoryEyebrow>
           <StoryTitle>Shape your family story</StoryTitle>
           <StoryLead>
-            Describe a moment, a value, or a memory. You will review everything before Claude writes
-            the draft.
+            Describe a moment, a value, or a memory. Claude will write the story and build the
+            world — setting and characters — around it.
           </StoryLead>
 
           {Object.entries(formValues).map(([key, value]) => (
@@ -247,18 +236,13 @@ export default function AIStoryGenerator({
           ))}
 
           {error && <StoryAlert message={error} />}
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <StoryButton variant="ghost" onClick={() => setStep('world')} className="flex-1">
-              Back
-            </StoryButton>
-            <StoryButton
-              onClick={() => setStep('review')}
-              disabled={!canAdvanceFromPrompt}
-              className="flex-1"
-            >
-              Preview before generating
-            </StoryButton>
-          </div>
+          <StoryButton
+            onClick={() => setStep('review')}
+            disabled={!canAdvanceFromPrompt}
+            className="mt-2 w-full"
+          >
+            Continue
+          </StoryButton>
         </StoryPanel>
       )}
 
@@ -267,21 +251,9 @@ export default function AIStoryGenerator({
           <StoryEyebrow>Review</StoryEyebrow>
           <StoryTitle>Ready to generate?</StoryTitle>
           <StoryLead>
-            Confirm your immersive world and prompt. You can still edit each sentence after — no need
-            to regenerate the whole story.
+            Claude will write your story and suggest a setting and characters that fit the narrative.
+            You can edit every line and adjust the world before publishing.
           </StoryLead>
-
-          <div className="mb-6 overflow-hidden rounded-2xl border border-[#e9d7d0]">
-            <ImmersiveWorldSetup
-              environment={environment}
-              characters={characters}
-              useAiVoice={useAiVoice}
-              onEnvironmentChange={setEnvironment}
-              onCharactersChange={setCharacters}
-              onUseAiVoiceChange={setUseAiVoice}
-              previewText={promptPreview}
-            />
-          </div>
 
           <div className="mb-6 rounded-xl border border-[#e9d7d0] bg-[#fff8f5] p-4">
             <p className="mb-2 font-label-sm uppercase tracking-widest text-[#857278]">Your prompt</p>
@@ -295,29 +267,13 @@ export default function AIStoryGenerator({
             )}
           </div>
 
-          <div className="mb-6 flex flex-wrap gap-2 text-sm text-[#524348]">
-            <span className="rounded-full bg-white px-3 py-1 ring-1 ring-[#e9d7d0]">
-              {ENVIRONMENT_LABELS[environment]}
-            </span>
-            {characters
-              .filter((c) => c.name.trim())
-              .map((c) => (
-                <span key={c.name} className="rounded-full bg-white px-3 py-1 ring-1 ring-[#e9d7d0]">
-                  {c.name} · {CHARACTER_META[c.type].label}
-                </span>
-              ))}
-            {useAiVoice && (
-              <span className="rounded-full bg-[#520e33] px-3 py-1 text-[#ffdbd2]">AI voice on</span>
-            )}
-          </div>
-
           {error && <StoryAlert message={error} />}
           <div className="flex flex-col gap-3 sm:flex-row">
             <StoryButton variant="ghost" onClick={() => setStep('prompt')} className="flex-1">
               Back
             </StoryButton>
-            <StoryButton onClick={generate} disabled={loading} className="flex-1">
-              {loading ? 'Writing with Claude…' : 'Generate story'}
+            <StoryButton onClick={() => void generate()} className="flex-1">
+              Generate story & world
             </StoryButton>
           </div>
         </StoryPanel>
@@ -327,9 +283,68 @@ export default function AIStoryGenerator({
         <EditableStoryPreview
           story={story}
           onStoryChange={setStory}
-          onPublish={saveDraft}
-          publishing={publishing}
+          onPublish={() => setStep('world')}
+          publishing={false}
+          continueLabel="Continue to world setup"
         />
+      )}
+
+      {step === 'world' && story && (
+        <StoryPanel>
+          <StoryEyebrow>World</StoryEyebrow>
+          <StoryTitle>Built around your story</StoryTitle>
+          <StoryLead>
+            Claude chose this setting and these characters to match your narrative. Walk through the
+            live scene below, then tweak names, descriptions, or the setting — the preview updates
+            as you go.
+          </StoryLead>
+
+          <ImmersiveWorldSetup
+            environment={environment}
+            environmentDescription={environmentDescription}
+            sceneSpec={sceneSpec}
+            characters={characters}
+            useAiVoice={useAiVoice}
+            onEnvironmentChange={setEnvironment}
+            onEnvironmentDescriptionChange={setEnvironmentDescription}
+            onCharactersChange={setCharacters}
+            onUseAiVoiceChange={setUseAiVoice}
+            previewText={story.sentences[0]?.sentenceText ?? story.title}
+            storyTitle={story.title}
+            storySentences={story.sentences}
+            showAiDescriptions
+          />
+
+          {error && <StoryAlert message={error} />}
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+            <StoryButton variant="ghost" onClick={() => setStep('edit')} className="flex-1">
+              Back to edit
+            </StoryButton>
+            <StoryButton
+              onClick={() => setStep('preview')}
+              disabled={!canAdvanceFromWorld}
+              className="flex-1"
+            >
+              Preview the full experience
+            </StoryButton>
+          </div>
+        </StoryPanel>
+      )}
+
+      {step === 'preview' && story && (
+        <>
+          {error && <StoryAlert message={error} />}
+          <StoryExperiencePreview
+            story={story}
+            environment={environment}
+            environmentDescription={environmentDescription}
+            sceneSpec={sceneSpec}
+            characters={characters}
+            onBack={() => setStep('world')}
+            onContinue={() => void saveDraft()}
+            continuing={publishing}
+          />
+        </>
       )}
 
       {step === 'voice' && story && (

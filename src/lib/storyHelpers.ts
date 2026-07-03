@@ -1,4 +1,24 @@
 import { SYSTEM_THEME_NAMES, type SystemThemeName } from './themes';
+import {
+  normalizeCharacterAppearance,
+  normalizeSceneSpec,
+} from './immersive/sceneSpec';
+import type {
+  CharacterType,
+  EnvironmentType,
+  StoryCharacterSlot,
+  StorySceneSpec,
+} from './immersive/types';
+
+const VALID_ENVIRONMENTS: EnvironmentType[] = ['forest', 'home', 'village', 'school', 'market'];
+const VALID_CHARACTER_TYPES: CharacterType[] = [
+  'boy',
+  'girl',
+  'grandma',
+  'grandpa',
+  'dog',
+  'teacher',
+];
 
 export type StoryGenerationType = 'ai' | 'quick' | 'manual';
 export type StoryStatus = 'draft' | 'published';
@@ -19,6 +39,10 @@ export interface GeneratedStoryPayload {
   transcript: string;
   themes: string[];
   sentences: StorySentenceInput[];
+  environment?: EnvironmentType;
+  environmentDescription?: string;
+  sceneSpec?: StorySceneSpec;
+  characters?: StoryCharacterSlot[];
 }
 
 export interface StoryRecord {
@@ -30,6 +54,7 @@ export interface StoryRecord {
   transcript?: string | null;
   audio_url?: string | null;
   generation_type?: StoryGenerationType | null;
+  source?: string | null;
   themes?: string[] | null;
   environment?: string | null;
   characters?: unknown;
@@ -131,11 +156,53 @@ export function validateGeneratedStory(data: unknown): GeneratedStoryPayload {
     SYSTEM_THEME_NAMES.includes(t as SystemThemeName)
   );
 
+  const environmentRaw = String(obj.environment ?? '').trim();
+  const environment = VALID_ENVIRONMENTS.includes(environmentRaw as EnvironmentType)
+    ? (environmentRaw as EnvironmentType)
+    : undefined;
+
+  const environmentDescription = obj.environmentDescription
+    ? String(obj.environmentDescription).trim()
+    : undefined;
+
+  const sceneSpec = environment
+    ? normalizeSceneSpec(obj.sceneSpec, environment)
+    : undefined;
+
+  let characters: StoryCharacterSlot[] | undefined;
+  if (Array.isArray(obj.characters) && obj.characters.length > 0) {
+    characters = obj.characters
+      .slice(0, 3)
+      .map((item, index) => {
+        const row = item as Record<string, unknown>;
+        const typeRaw = String(row.type ?? row.character_type ?? 'grandma');
+        const type = VALID_CHARACTER_TYPES.includes(typeRaw as CharacterType)
+          ? (typeRaw as CharacterType)
+          : 'grandma';
+        const name = String(row.name ?? row.character_name ?? `Character ${index + 1}`).trim();
+        const description = row.description ? String(row.description).trim() : undefined;
+        const appearance = normalizeCharacterAppearance(row.appearance, type);
+        return {
+          name: name || `Character ${index + 1}`,
+          type,
+          position: index + 1,
+          description,
+          appearance,
+        };
+      })
+      .filter((c) => c.name.length > 0);
+    if (characters.length === 0) characters = undefined;
+  }
+
   return {
     title,
     transcript: transcript || sentences.map((s) => s.sentenceText).join(' '),
     themes: normalizedThemes.length > 0 ? normalizedThemes : ['Ubuntu'],
     sentences,
+    environment,
+    environmentDescription,
+    sceneSpec,
+    characters,
   };
 }
 

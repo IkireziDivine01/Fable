@@ -1,6 +1,12 @@
 import { create } from 'zustand';
-import type { DisplayLanguage, EnvironmentType, StoryCharacterSlot } from './types';
-import { getEnvironmentPreset } from './presets';
+import type {
+  DisplayLanguage,
+  EnvironmentType,
+  RhubarbViseme,
+  StoryCharacterSlot,
+  StorySceneSpec,
+} from './types';
+import { resolveEnvironmentPreset } from './sceneSpec';
 
 export const CAMERA_ZOOM_MIN = 2.8;
 export const CAMERA_ZOOM_MAX = 7;
@@ -9,10 +15,11 @@ export const CAMERA_ZOOM_DEFAULT = 4.2;
 interface ImmersiveStore {
   storyId: string | null;
   environment: EnvironmentType;
+  sceneSpec: StorySceneSpec | null;
   characters: StoryCharacterSlot[];
   sentenceIndex: number;
   isPlaying: boolean;
-  mouthOpenness: number;
+  mouthViseme: RhubarbViseme;
   activeCharacterIndex: number;
   isImmersive: boolean;
   useAiVoice: boolean;
@@ -20,16 +27,21 @@ interface ImmersiveStore {
   currentKinyarwandaText: string;
   displayLanguage: DisplayLanguage;
   cameraZoom: number;
+  worldPreviewActive: boolean;
 
   setPreviewWorld: (input: {
     environment: EnvironmentType;
     characters: StoryCharacterSlot[];
+    sceneSpec?: StorySceneSpec | null;
     useAiVoice?: boolean;
+    worldPreview?: boolean;
   }) => void;
+  setWorldPreviewActive: (active: boolean) => void;
   init: (input: {
     storyId: string;
     environment: EnvironmentType;
     characters: StoryCharacterSlot[];
+    sceneSpec?: StorySceneSpec | null;
     isImmersive: boolean;
     useAiVoice?: boolean;
   }) => void;
@@ -40,7 +52,7 @@ interface ImmersiveStore {
   adjustCameraZoom: (delta: number) => void;
   setSentenceIndex: (index: number) => void;
   setPlaying: (playing: boolean) => void;
-  setMouthOpenness: (value: number) => void;
+  setMouthViseme: (value: RhubarbViseme) => void;
   setActiveCharacterIndex: (index: number) => void;
   reset: () => void;
 }
@@ -48,10 +60,11 @@ interface ImmersiveStore {
 export const useImmersiveStore = create<ImmersiveStore>((set) => ({
   storyId: null,
   environment: 'village',
+  sceneSpec: null,
   characters: [{ name: 'Grandmother', type: 'grandma', position: 1 }],
   sentenceIndex: 0,
   isPlaying: false,
-  mouthOpenness: 0,
+  mouthViseme: 'X',
   activeCharacterIndex: 0,
   isImmersive: true,
   useAiVoice: false,
@@ -59,28 +72,34 @@ export const useImmersiveStore = create<ImmersiveStore>((set) => ({
   currentKinyarwandaText: '',
   displayLanguage: 'en',
   cameraZoom: CAMERA_ZOOM_DEFAULT,
+  worldPreviewActive: false,
 
-  setPreviewWorld: ({ environment, characters, useAiVoice }) =>
+  setPreviewWorld: ({ environment, characters, sceneSpec, useAiVoice, worldPreview }) =>
     set({
       storyId: 'preview',
       environment,
+      sceneSpec: sceneSpec ?? null,
       characters,
       useAiVoice: useAiVoice ?? false,
       isImmersive: true,
       activeCharacterIndex: 0,
+      worldPreviewActive: worldPreview ?? false,
     }),
 
-  init: ({ storyId, environment, characters, isImmersive, useAiVoice }) =>
+  setWorldPreviewActive: (active) => set({ worldPreviewActive: active }),
+
+  init: ({ storyId, environment, characters, sceneSpec, isImmersive, useAiVoice }) =>
     set({
       storyId,
       environment,
+      sceneSpec: sceneSpec ?? null,
       characters:
         characters.length > 0 ? characters : [{ name: 'Grandmother', type: 'grandma', position: 1 }],
       isImmersive,
       useAiVoice: useAiVoice ?? false,
       sentenceIndex: 0,
       isPlaying: false,
-      mouthOpenness: 0,
+      mouthViseme: 'X',
       activeCharacterIndex: 0,
       currentSentenceText: '',
       currentKinyarwandaText: '',
@@ -106,17 +125,18 @@ export const useImmersiveStore = create<ImmersiveStore>((set) => ({
       ),
     })),
 
-  setSentenceIndex: (index) => set({ sentenceIndex: index, mouthOpenness: 0 }),
+  setSentenceIndex: (index) => set({ sentenceIndex: index, mouthViseme: 'X' }),
   setPlaying: (playing) => set({ isPlaying: playing }),
-  setMouthOpenness: (value) => set({ mouthOpenness: value }),
+  setMouthViseme: (value) => set({ mouthViseme: value }),
   setActiveCharacterIndex: (index) => set({ activeCharacterIndex: index }),
   reset: () =>
     set({
       storyId: null,
+      sceneSpec: null,
       characters: [],
       sentenceIndex: 0,
       isPlaying: false,
-      mouthOpenness: 0,
+      mouthViseme: 'X',
       activeCharacterIndex: 0,
       isImmersive: false,
       useAiVoice: false,
@@ -124,10 +144,12 @@ export const useImmersiveStore = create<ImmersiveStore>((set) => ({
       currentKinyarwandaText: '',
       displayLanguage: 'en',
       cameraZoom: CAMERA_ZOOM_DEFAULT,
+      worldPreviewActive: false,
     }),
 }));
 
 export function useEnvironmentPreset() {
   const environment = useImmersiveStore((s) => s.environment);
-  return getEnvironmentPreset(environment);
+  const sceneSpec = useImmersiveStore((s) => s.sceneSpec);
+  return resolveEnvironmentPreset(environment, sceneSpec);
 }

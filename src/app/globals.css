@@ -154,6 +154,38 @@ button {
   animation: float 3s ease-in-out infinite;
 }
 
+@keyframes ember {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 0.2;
+  }
+  50% {
+    transform: translateY(-18px) scale(1.4);
+    opacity: 0.9;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* Material symbols fallback */
 .material-symbols-outlined {
   font-feature-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;

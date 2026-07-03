@@ -3,12 +3,13 @@
 import { useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { useImmersiveStore } from '@/lib/immersive/store';
-import type { EnvironmentType, StoryCharacterSlot } from '@/lib/immersive/types';
+import type { EnvironmentType, StoryCharacterSlot, StorySceneSpec } from '@/lib/immersive/types';
 
 const StoryCanvas = dynamic(() => import('./StoryCanvas'), { ssr: false });
 
 interface ImmersivePreviewPanelProps {
   environment: EnvironmentType;
+  sceneSpec?: StorySceneSpec | null;
   characters: StoryCharacterSlot[];
   heightClass?: string;
   previewText?: string;
@@ -16,6 +17,7 @@ interface ImmersivePreviewPanelProps {
 
 export default function ImmersivePreviewPanel({
   environment,
+  sceneSpec = null,
   characters,
   heightClass = 'h-[340px]',
   previewText = 'Your story will unfold here…',
@@ -24,9 +26,9 @@ export default function ImmersivePreviewPanel({
   const setCurrentLine = useImmersiveStore((s) => s.setCurrentLine);
 
   useEffect(() => {
-    setPreviewWorld({ environment, characters });
+    setPreviewWorld({ environment, characters, sceneSpec });
     setCurrentLine(previewText);
-  }, [environment, characters, previewText, setPreviewWorld, setCurrentLine]);
+  }, [environment, characters, sceneSpec, previewText, setPreviewWorld, setCurrentLine]);
 
   return (
     <div className={`relative overflow-hidden rounded-2xl border border-[#e9d7d0] ${heightClass}`}>

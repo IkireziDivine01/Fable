@@ -5,33 +5,41 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Preload } from '@react-three/drei';
 import EnvironmentScene from './EnvironmentScene';
 import StoryCharacterMesh from './StoryCharacterMesh';
+import StoryDialogueHud from './StoryDialogueHud';
 import { useImmersiveStore } from '@/lib/immersive/store';
 import { CHARACTER_META } from '@/lib/immersive/presets';
+import { resolveCharacterAppearance } from '@/lib/immersive/sceneSpec';
 
-function CameraRig({ compact }: { compact: boolean }) {
+function CameraRig({ compact, worldPreview }: { compact: boolean; worldPreview: boolean }) {
   const cameraZoom = useImmersiveStore((s) => s.cameraZoom);
   const { camera } = useThree();
-  const baseY = compact ? 1.55 : 1.55;
-  const baseX = 0;
+  const baseY = compact ? 1.55 : 1.85;
+  const lookAtY = compact ? 1.1 : 1.35;
 
-  useFrame(() => {
-    camera.position.x += (baseX - camera.position.x) * 0.08;
-    camera.position.y += (baseY - camera.position.y) * 0.08;
-    camera.position.z += (cameraZoom - camera.position.z) * 0.08;
-    camera.lookAt(0, 1.1, 0);
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    const orbitX = worldPreview ? Math.sin(t * 0.22) * 0.55 : 0;
+    const orbitZ = worldPreview ? Math.cos(t * 0.18) * 0.25 : 0;
+    const targetX = orbitX;
+    const targetY = baseY + (worldPreview ? Math.sin(t * 0.35) * 0.04 : 0);
+    const targetZ = cameraZoom + orbitZ;
+
+    camera.position.x += (targetX - camera.position.x) * 0.06;
+    camera.position.y += (targetY - camera.position.y) * 0.06;
+    camera.position.z += (targetZ - camera.position.z) * 0.06;
+    camera.lookAt(0, lookAtY, 0);
   });
 
   return null;
 }
 
-function SceneContents() {
+function SceneContents({ showCharacterLabels }: { showCharacterLabels: boolean }) {
   const characters = useImmersiveStore((s) => s.characters);
-  const mouthOpenness = useImmersiveStore((s) => s.mouthOpenness);
+  const mouthViseme = useImmersiveStore((s) => s.mouthViseme);
   const activeCharacterIndex = useImmersiveStore((s) => s.activeCharacterIndex);
   const isPlaying = useImmersiveStore((s) => s.isPlaying);
+  const worldPreviewActive = useImmersiveStore((s) => s.worldPreviewActive);
   const currentSentenceText = useImmersiveStore((s) => s.currentSentenceText);
-  const currentKinyarwandaText = useImmersiveStore((s) => s.currentKinyarwandaText);
-  const displayLanguage = useImmersiveStore((s) => s.displayLanguage);
 
   const slots =
     characters.length > 0
@@ -47,21 +55,27 @@ function SceneContents() {
         const x = (i - (slots.length - 1) / 2) * spread;
         const isActive = i === activeCharacterIndex;
         const meta = CHARACTER_META[char.type];
+        const appearance = resolveCharacterAppearance(char);
         return (
           <StoryCharacterMesh
             key={`${char.type}-${char.name}-${i}`}
             position={[x, 0, isActive ? 0.35 : -0.15]}
-            skinColor={meta.skinColor}
-            garmentColor={meta.garmentColor}
-            accentColor={meta.accentColor}
-            height={meta.height}
-            mouthOpenness={isActive && isPlaying ? mouthOpenness : 0}
+            skinColor={appearance.skinColor}
+            garmentColor={appearance.garmentColor}
+            accentColor={appearance.accentColor}
+            height={appearance.height}
+            mouthViseme={isActive && isPlaying ? mouthViseme : 'X'}
+            eyeColor={appearance.eyeColor}
+            hasBlush={appearance.hasBlush}
+            blushColor={appearance.blushColor}
+            bodyPattern={appearance.bodyPattern}
+            accessories={appearance.accessories}
             isSpeaking={isActive && (isPlaying || Boolean(currentSentenceText))}
+            idleMotion={worldPreviewActive && !isActive}
+            previewSpeech={worldPreviewActive && isActive}
+            showNameLabel={showCharacterLabels}
             characterType={char.type}
-            characterName={char.name}
-            speechText={isActive ? currentSentenceText : undefined}
-            kinyarwandaText={isActive ? currentKinyarwandaText : undefined}
-            displayLanguage={displayLanguage}
+            characterName={char.name.trim() || meta.label}
           />
         );
       })}
@@ -70,7 +84,22 @@ function SceneContents() {
   );
 }
 
-export default function StoryCanvas({ compact = false }: { compact?: boolean }) {
+export default function StoryCanvas({
+  compact = false,
+  worldPreview = false,
+  showCharacterLabels = false,
+  showDialogueHud,
+}: {
+  compact?: boolean;
+  worldPreview?: boolean;
+  showCharacterLabels?: boolean;
+  showDialogueHud?: boolean;
+}) {
+  const hasDialogue = useImmersiveStore((s) =>
+    Boolean(s.currentSentenceText.trim() || s.currentKinyarwandaText.trim())
+  );
+  const dialogueHudVisible = (showDialogueHud ?? !worldPreview) && hasDialogue;
+
   return (
     <div className={`${compact ? 'absolute inset-0' : 'absolute inset-0'} bg-[#1e1b18]`}>
       <Canvas
@@ -79,10 +108,11 @@ export default function StoryCanvas({ compact = false }: { compact?: boolean }) 
         gl={{ antialias: true, alpha: false }}
       >
         <Suspense fallback={null}>
-          <CameraRig compact={compact} />
-          <SceneContents />
+          <CameraRig compact={compact} worldPreview={worldPreview} />
+          <SceneContents showCharacterLabels={showCharacterLabels} />
         </Suspense>
       </Canvas>
+      {dialogueHudVisible && <StoryDialogueHud compact={compact} />}
       {!compact && (
         <div
           className="pointer-events-none absolute inset-3 rounded-lg border border-[#C4A574]/30 md:inset-5"

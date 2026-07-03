@@ -10,6 +10,7 @@ interface EditableStoryPreviewProps {
   onStoryChange: (story: GeneratedStoryPayload) => void;
   onPublish: () => void;
   publishing?: boolean;
+  continueLabel?: string;
 }
 
 export default function EditableStoryPreview({
@@ -17,6 +18,7 @@ export default function EditableStoryPreview({
   onStoryChange,
   onPublish,
   publishing = false,
+  continueLabel = 'Save & continue to voice',
 }: EditableStoryPreviewProps) {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
 
@@ -105,7 +107,7 @@ export default function EditableStoryPreview({
       </ol>
 
       <StoryButton onClick={onPublish} disabled={publishing} className="w-full">
-        {publishing ? 'Publishing…' : 'Save & continue to voice'}
+        {publishing ? 'Saving…' : continueLabel}
       </StoryButton>
     </div>
   );

@@ -1,4 +1,5 @@
 import { supabaseAdmin } from './supabase-admin';
+import { listHouseholdLearners } from './auth-server';
 import type {
   StoryGenerationType,
   StorySentenceInput,
@@ -17,6 +18,7 @@ function mapStory(row: Record<string, unknown>): StoryRecord {
     transcript: (row.transcript as string) ?? null,
     audio_url: (row.audio_url as string) ?? null,
     generation_type: (row.generation_type as StoryGenerationType) ?? null,
+    source: (row.source as string) ?? null,
     themes: Array.isArray(row.themes) ? (row.themes as string[]) : null,
     environment: (row.environment as string) ?? null,
     characters: row.characters ?? null,
@@ -53,6 +55,7 @@ export async function createStoryWithSentences(input: {
   sentences: StorySentenceInput[];
   status?: StoryStatus;
   audioUrl?: string;
+  source?: string;
 }) {
   const status = input.status ?? 'draft';
   const now = new Date().toISOString();
@@ -68,6 +71,7 @@ export async function createStoryWithSentences(input: {
   };
 
   if (input.audioUrl) storyInsert.audio_url = input.audioUrl;
+  if (input.source) storyInsert.source = input.source;
 
   let storyRow: Record<string, unknown> | null = null;
   let storyError: { message: string } | null = null;
@@ -164,7 +168,7 @@ export async function listStoriesForHousehold(
 ) {
   let query = supabaseAdmin
     .from('stories')
-    .select('id, title, status, created_at, author_id, generation_type, themes, transcript, is_immersive, environment')
+    .select('id, title, status, created_at, author_id, generation_type, source, themes, transcript, is_immersive, environment')
     .eq('household_id', householdId)
     .order('created_at', { ascending: false });
 
@@ -244,12 +248,13 @@ export async function updateStorySentences(
 export async function updateStoryDraft(
   storyId: string,
   householdId: string,
-  patch: { title?: string; transcript?: string; audioUrl?: string }
+  patch: { title?: string; transcript?: string; audioUrl?: string; source?: string }
 ) {
   const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (patch.title) payload.title = patch.title;
   if (patch.transcript) payload.transcript = patch.transcript;
   if (patch.audioUrl) payload.audio_url = patch.audioUrl;
+  if (patch.source !== undefined) payload.source = patch.source || null;
 
   const { data, error } = await supabaseAdmin
     .from('stories')
@@ -285,4 +290,104 @@ export async function logStoryActivity(input: {
     // Table may not exist yet — log silently in dev
     console.warn('Could not log activity:', error.message);
   }
+}
+
+export interface ReadingActivityItem {
+  id: string;
+  kidId: string;
+  kidName: string;
+  storyId: string | null;
+  storyTitle: string;
+  eventType: 'STORY_STARTED' | 'STORY_COMPLETED';
+  timestamp: string;
+}
+
+export interface HouseholdReadingSummary {
+  learners: {
+    id: string;
+    name: string;
+    storiesReadThisWeek: number;
+    accountStatus?: string;
+  }[];
+  recentActivity: ReadingActivityItem[];
+  totalReadsThisWeek: number;
+}
+
+export async function getHouseholdReadingActivity(
+  householdId: string
+): Promise<HouseholdReadingSummary> {
+  const weekStart = new Date();
+  weekStart.setDate(weekStart.getDate() - 7);
+
+  const householdLearners = await listHouseholdLearners(householdId);
+
+  const { data: logs, error: logsError } = await supabaseAdmin
+    .from('interaction_logs')
+    .select('id, actor_id, story_id, event_type, timestamp')
+    .eq('household_id', householdId)
+    .in('event_type', ['STORY_STARTED', 'STORY_COMPLETED'])
+    .order('timestamp', { ascending: false })
+    .limit(40);
+
+  if (logsError) {
+    console.warn('Could not load reading activity:', logsError.message);
+  }
+
+  const rows = logs ?? [];
+  const actorIds = [...new Set(rows.map((r) => String(r.actor_id)))];
+  const storyIds = [
+    ...new Set(rows.filter((r) => r.story_id).map((r) => String(r.story_id))),
+  ];
+
+  const [{ data: profiles }, { data: stories }] = await Promise.all([
+    actorIds.length
+      ? supabaseAdmin.from('user_profiles').select('id, name, role').in('id', actorIds)
+      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+    storyIds.length
+      ? supabaseAdmin.from('stories').select('id, title').in('id', storyIds)
+      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+  ]);
+
+  const profileMap = new Map(
+    (profiles ?? []).map((p) => [String(p.id), { name: String(p.name ?? 'Learner'), role: String(p.role) }])
+  );
+  const storyMap = new Map((stories ?? []).map((s) => [String(s.id), String(s.title)]));
+
+  const learners = householdLearners.map((kid) => {
+    const row = kid as Record<string, unknown>;
+    const kidId = String(row.id);
+    const completedThisWeek = rows.filter(
+      (r) =>
+        String(r.actor_id) === kidId &&
+        r.event_type === 'STORY_COMPLETED' &&
+        new Date(String(r.timestamp)) >= weekStart
+    ).length;
+    return {
+      id: kidId,
+      name: String(row.name ?? 'Learner'),
+      storiesReadThisWeek: completedThisWeek,
+      accountStatus: row.account_status ? String(row.account_status) : 'active',
+    };
+  });
+
+  const recentActivity: ReadingActivityItem[] = rows.map((row) => {
+    const actorId = String(row.actor_id);
+    const profile = profileMap.get(actorId);
+    const storyId = row.story_id ? String(row.story_id) : null;
+    return {
+      id: String(row.id),
+      kidId: actorId,
+      kidName: profile?.name ?? 'Learner',
+      storyId,
+      storyTitle: storyId ? (storyMap.get(storyId) ?? 'Untitled story') : 'Untitled story',
+      eventType: row.event_type as 'STORY_STARTED' | 'STORY_COMPLETED',
+      timestamp: String(row.timestamp),
+    };
+  });
+
+  const totalReadsThisWeek = rows.filter(
+    (r) => r.event_type === 'STORY_COMPLETED' && new Date(String(r.timestamp)) >= weekStart
+  ).length;
+
+  return { learners, recentActivity, totalReadsThisWeek };
 }

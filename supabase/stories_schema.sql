@@ -19,6 +19,9 @@ ALTER TABLE stories
 ALTER TABLE stories
   ADD COLUMN IF NOT EXISTS themes JSONB DEFAULT '[]'::jsonb;
 
+ALTER TABLE stories
+  ADD COLUMN IF NOT EXISTS source TEXT;
+
 ALTER TABLE story_sentences
   ADD COLUMN IF NOT EXISTS kinyarwanda_text TEXT;
 
