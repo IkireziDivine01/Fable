@@ -1,6 +1,7 @@
-import type { MouthShape, MouthSyncTiming } from './types';
+import { normalizeViseme } from './character/faceTexture';
+import type { MouthShape, MouthSyncTiming, RhubarbViseme } from './types';
 
-const SHAPES: MouthShape[] = ['closed', 'small', 'medium', 'wide', 'medium', 'small'];
+const VISEME_CYCLE: RhubarbViseme[] = ['C', 'E', 'A', 'D', 'F', 'G', 'B', 'H'];
 
 /** Build syllable-like mouth timings from audio duration (no ML required) */
 export function buildMouthSyncTimings(durationSec: number, syllableCount?: number): MouthSyncTiming[] {
@@ -11,31 +12,38 @@ export function buildMouthSyncTimings(durationSec: number, syllableCount?: numbe
   for (let i = 0; i < count; i += 1) {
     timings.push({
       time: i * step,
-      shape: SHAPES[i % SHAPES.length] ?? 'small',
+      shape: VISEME_CYCLE[i % VISEME_CYCLE.length] ?? 'C',
     });
   }
 
-  timings.push({ time: durationSec, shape: 'closed' });
+  timings.push({ time: durationSec, shape: 'X' });
   return timings;
 }
 
+/** @deprecated Use getVisemeAtTime — maps viseme to 0–1 for legacy callers */
 export function shapeToOpenness(shape: MouthShape): number {
-  switch (shape) {
-    case 'closed':
+  const viseme = normalizeViseme(shape);
+  switch (viseme) {
+    case 'X':
       return 0;
-    case 'small':
+    case 'B':
+    case 'C':
       return 0.25;
-    case 'medium':
+    case 'E':
+    case 'F':
+    case 'G':
+    case 'H':
       return 0.55;
-    case 'wide':
+    case 'A':
+    case 'D':
       return 0.9;
     default:
       return 0;
   }
 }
 
-export function getMouthOpennessAtTime(timings: MouthSyncTiming[], timeSec: number): number {
-  if (timings.length === 0) return 0;
+export function getVisemeAtTime(timings: MouthSyncTiming[], timeSec: number): RhubarbViseme {
+  if (timings.length === 0) return 'X';
 
   let active = timings[0];
   for (const t of timings) {
@@ -43,16 +51,36 @@ export function getMouthOpennessAtTime(timings: MouthSyncTiming[], timeSec: numb
     else break;
   }
 
-  return shapeToOpenness(active?.shape ?? 'closed');
+  return normalizeViseme(active?.shape ?? 'X');
 }
 
+/** @deprecated Use getVisemeAtTime */
+export function getMouthOpennessAtTime(timings: MouthSyncTiming[], timeSec: number): number {
+  return shapeToOpenness(getVisemeAtTime(timings, timeSec));
+}
+
+const TTS_VISEMES: RhubarbViseme[] = ['C', 'E', 'A', 'D', 'F', 'G'];
+
 /** Amplitude-driven fallback when no pre-calculated timings exist */
+export function amplitudeToViseme(amplitude: number): RhubarbViseme {
+  if (amplitude < 0.15) return 'X';
+  if (amplitude < 0.35) return 'C';
+  if (amplitude < 0.55) return 'E';
+  if (amplitude < 0.75) return 'D';
+  return 'A';
+}
+
+/** @deprecated Use amplitudeToViseme */
 export function amplitudeToOpenness(amplitude: number): number {
-  return Math.min(1, Math.max(0, amplitude * 2.5));
+  return shapeToOpenness(amplitudeToViseme(amplitude));
 }
 
 export function estimateSyllableCount(text: string): number {
   const words = text.trim().split(/\s+/).filter(Boolean);
   if (words.length === 0) return 4;
   return Math.max(4, words.reduce((sum, word) => sum + Math.max(1, Math.ceil(word.length / 2.5)), 0));
+}
+
+export function nextTtsViseme(frame: number): RhubarbViseme {
+  return TTS_VISEMES[frame % TTS_VISEMES.length] ?? 'C';
 }

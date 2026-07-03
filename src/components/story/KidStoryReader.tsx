@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import StoryRecommendations from '@/components/story/StoryRecommendations';
 import { useEffect, useRef, useState } from 'react';
 import ThemeBadge from '@/components/story/ThemeBadge';
 import { CheckCircleIcon } from '@/components/HeroIcons';
@@ -88,6 +89,7 @@ export default function KidStoryReader({
         >
           Back to library
         </Link>
+        <StoryRecommendations currentStoryId={storyId} variant="light" />
       </div>
     );
   }

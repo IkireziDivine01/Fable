@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import ImmersiveStoryPlayer from '@/components/immersive/ImmersiveStoryPlayer';
 import type { KidSentence } from '@/components/story/KidStoryReader';
 import StoryShell, { StoryAlert } from '@/components/story/StoryShell';
-import type { EnvironmentType, StoryCharacterSlot } from '@/lib/immersive/types';
+import type { EnvironmentType, StoryCharacterSlot, StorySceneSpec } from '@/lib/immersive/types';
 
 export default function KidStoryReaderPage() {
   const params = useParams();
@@ -13,6 +13,7 @@ export default function KidStoryReaderPage() {
   const [title, setTitle] = useState('');
   const [sentences, setSentences] = useState<KidSentence[]>([]);
   const [environment, setEnvironment] = useState<EnvironmentType>('village');
+  const [sceneSpec, setSceneSpec] = useState<StorySceneSpec | null>(null);
   const [characters, setCharacters] = useState<StoryCharacterSlot[]>([
     { name: 'Grandmother', type: 'grandma', position: 1 },
   ]);
@@ -30,6 +31,7 @@ export default function KidStoryReaderPage() {
         setTitle(result.story.title);
         setSentences(result.sentences ?? []);
         setEnvironment(result.immersive?.environment ?? 'village');
+        setSceneSpec(result.immersive?.animationData?.sceneSpec ?? null);
         setCharacters(
           result.immersive?.characters?.length
             ? result.immersive.characters
@@ -84,6 +86,7 @@ export default function KidStoryReaderPage() {
       title={title}
       sentences={sentences}
       environment={environment}
+      sceneSpec={sceneSpec}
       characters={characters}
       useAiVoice={useAiVoice}
       onComplete={handleComplete}

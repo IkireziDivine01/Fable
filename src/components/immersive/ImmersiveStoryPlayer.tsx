@@ -3,15 +3,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
+import { ArrowLeft, ZoomIn, ZoomOut } from 'lucide-react';
 import { preloadVoices, runTtsLipSync, speakText, unlockAudioPlayback } from '@/lib/aiVoice';
 import {
   buildMouthSyncTimings,
   estimateSyllableCount,
-  getMouthOpennessAtTime,
+  getVisemeAtTime,
 } from '@/lib/immersive/lipSync';
 import { useImmersiveStore } from '@/lib/immersive/store';
-import type { DisplayLanguage, EnvironmentType, StoryCharacterSlot } from '@/lib/immersive/types';
+import type { DisplayLanguage, EnvironmentType, StoryCharacterSlot, StorySceneSpec } from '@/lib/immersive/types';
 import type { KidSentence } from '@/components/story/KidStoryReader';
+import StoryRecommendations from '@/components/story/StoryRecommendations';
 
 const StoryCanvas = dynamic(() => import('./StoryCanvas'), { ssr: false });
 
@@ -20,6 +22,7 @@ interface ImmersiveStoryPlayerProps {
   title: string;
   sentences: KidSentence[];
   environment: EnvironmentType;
+  sceneSpec?: StorySceneSpec | null;
   characters: StoryCharacterSlot[];
   useAiVoice?: boolean;
   onComplete?: () => void;
@@ -30,6 +33,7 @@ export default function ImmersiveStoryPlayer({
   title,
   sentences,
   environment,
+  sceneSpec = null,
   characters,
   useAiVoice = false,
   onComplete,
@@ -38,7 +42,7 @@ export default function ImmersiveStoryPlayer({
   const sentenceIndex = useImmersiveStore((s) => s.sentenceIndex);
   const setSentenceIndex = useImmersiveStore((s) => s.setSentenceIndex);
   const setPlaying = useImmersiveStore((s) => s.setPlaying);
-  const setMouthOpenness = useImmersiveStore((s) => s.setMouthOpenness);
+  const setMouthViseme = useImmersiveStore((s) => s.setMouthViseme);
   const setCurrentLine = useImmersiveStore((s) => s.setCurrentLine);
   const setActiveCharacterIndex = useImmersiveStore((s) => s.setActiveCharacterIndex);
   const displayLanguage = useImmersiveStore((s) => s.displayLanguage);
@@ -66,12 +70,12 @@ export default function ImmersiveStoryPlayer({
 
   useEffect(() => {
     preloadVoices();
-    init({ storyId, environment, characters: slots, isImmersive: true, useAiVoice });
+    init({ storyId, environment, characters: slots, sceneSpec, isImmersive: true, useAiVoice });
     return () => {
       cleanupPlayback();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storyId, environment, useAiVoice]);
+  }, [storyId, environment, sceneSpec, useAiVoice]);
 
   const cleanupPlayback = useCallback(() => {
     if (rafRef.current) {
@@ -90,9 +94,9 @@ export default function ImmersiveStoryPlayer({
       audioRef.current.currentTime = 0;
     }
     lipSyncTimingsRef.current = [];
-    setMouthOpenness(0);
+    setMouthViseme('X');
     setPlaying(false);
-  }, [setMouthOpenness, setPlaying]);
+  }, [setMouthViseme, setPlaying]);
 
   const advanceSentence = useCallback(() => {
     if (advancingRef.current) return;
@@ -115,13 +119,13 @@ export default function ImmersiveStoryPlayer({
   const tickRecordedLipSync = useCallback(() => {
     const audio = audioRef.current;
     if (!audio || audio.paused) {
-      setMouthOpenness(0);
+      setMouthViseme('X');
       return;
     }
 
-    setMouthOpenness(getMouthOpennessAtTime(lipSyncTimingsRef.current, audio.currentTime));
+    setMouthViseme(getVisemeAtTime(lipSyncTimingsRef.current, audio.currentTime));
     rafRef.current = requestAnimationFrame(tickRecordedLipSync);
-  }, [setMouthOpenness]);
+  }, [setMouthViseme]);
 
   const playRecorded = useCallback(async () => {
     if (!current?.audio_url || !audioRef.current) return false;
@@ -155,7 +159,7 @@ export default function ImmersiveStoryPlayer({
       );
 
       audio.onended = () => {
-        setMouthOpenness(0);
+        setMouthViseme('X');
         advanceSentence();
       };
 
@@ -172,7 +176,7 @@ export default function ImmersiveStoryPlayer({
     cleanupPlayback,
     current?.audio_url,
     current?.sentence_text,
-    setMouthOpenness,
+    setMouthViseme,
     setPlaying,
     tickRecordedLipSync,
   ]);
@@ -193,7 +197,7 @@ export default function ImmersiveStoryPlayer({
 
     ttsActiveRef.current = true;
     setPlaying(true);
-    stopLipSyncRef.current = runTtsLipSync(setMouthOpenness, () => ttsActiveRef.current);
+    stopLipSyncRef.current = runTtsLipSync(setMouthViseme, () => ttsActiveRef.current);
     stopTtsRef.current = speakText(text, {
       voice: 'grandma',
       lang: displayLanguage === 'rw' ? 'rw-RW' : 'en-US',
@@ -204,7 +208,7 @@ export default function ImmersiveStoryPlayer({
       onStart: () => setPlaying(true),
     });
     return true;
-  }, [advanceSentence, displayLanguage, narrationText, setMouthOpenness, setPlaying]);
+  }, [advanceSentence, displayLanguage, narrationText, setMouthViseme, setPlaying]);
 
   const playCurrentSentence = useCallback(async () => {
     if (!current) return;
@@ -276,7 +280,7 @@ export default function ImmersiveStoryPlayer({
 
   if (completed) {
     return (
-      <div className="flex min-h-[100dvh] flex-col items-center justify-center bg-[#1e1b18] px-6 text-center">
+      <div className="flex min-h-[100dvh] flex-col items-center justify-center bg-[#1e1b18] px-6 py-12 text-center">
         <p className="mb-2 font-label-sm uppercase tracking-[0.3em] text-[#C4A574]">Urakoze · Well done</p>
         <h1 className="mb-4 font-headline-lg text-headline-lg text-[#fff8f5]">{title}</h1>
         <p className="mb-8 max-w-sm font-body-md text-[#ffdbd2]/90">
@@ -288,6 +292,7 @@ export default function ImmersiveStoryPlayer({
         >
           Return to library
         </Link>
+        <StoryRecommendations currentStoryId={storyId} variant="dark" />
       </div>
     );
   }
@@ -328,9 +333,11 @@ export default function ImmersiveStoryPlayer({
           <div className="flex items-center justify-between gap-3">
             <Link
               href="/kid/library"
-              className="rounded-full bg-[#520e33]/80 px-3 py-1.5 text-xs uppercase tracking-widest text-[#ffdbd2]"
+              className="inline-flex items-center gap-1.5 rounded-lg border-2 border-[#C4A574]/50 bg-[#241810]/90 px-3 py-1.5 text-xs uppercase tracking-widest text-[#ffdbd2]"
+              style={{ fontFamily: "'Fredoka', sans-serif" }}
             >
-              ← Library
+              <ArrowLeft size={14} strokeWidth={2.5} />
+              Library
             </Link>
 
             {hasKinyarwanda && (
@@ -360,22 +367,22 @@ export default function ImmersiveStoryPlayer({
               </div>
             )}
 
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1">
               <button
                 type="button"
                 aria-label="Zoom out"
                 onClick={() => adjustCameraZoom(0.4)}
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-[#520e33]/80 text-sm text-[#ffdbd2] hover:bg-[#520e33]"
+                className="flex h-8 w-8 items-center justify-center rounded-lg border-2 border-[#C4A574]/40 bg-[#241810]/90 text-[#ffdbd2] hover:border-[#C4A574]"
               >
-                −
+                <ZoomOut size={16} strokeWidth={2.25} />
               </button>
               <button
                 type="button"
                 aria-label="Zoom in"
                 onClick={() => adjustCameraZoom(-0.4)}
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-[#520e33]/80 text-sm text-[#ffdbd2] hover:bg-[#520e33]"
+                className="flex h-8 w-8 items-center justify-center rounded-lg border-2 border-[#C4A574]/40 bg-[#241810]/90 text-[#ffdbd2] hover:border-[#C4A574]"
               >
-                +
+                <ZoomIn size={16} strokeWidth={2.25} />
               </button>
             </div>
           </div>
@@ -384,12 +391,19 @@ export default function ImmersiveStoryPlayer({
             {sentences.map((_, i) => (
               <span
                 key={i}
-                className={`h-1.5 rounded-full transition-all ${
-                  i === sentenceIndex ? 'w-6 bg-[#FF7956]' : i < sentenceIndex ? 'w-1.5 bg-[#C4A574]' : 'w-1.5 bg-[#524348]'
+                className={`transition-all ${
+                  i === sentenceIndex
+                    ? 'h-2.5 w-2.5 rotate-45 border-2 border-[#FF7956] bg-[#FF7956] shadow-[0_0_8px_rgba(255,121,86,0.6)]'
+                    : i < sentenceIndex
+                      ? 'h-2 w-2 rotate-45 border border-[#C4A574] bg-[#C4A574]'
+                      : 'h-2 w-2 rotate-45 border border-[#524348] bg-transparent'
                 }`}
               />
             ))}
-            <span className="ml-2 font-label-sm text-[#C4A574]">
+            <span
+              className="ml-2 text-xs tracking-widest text-[#C4A574]"
+              style={{ fontFamily: "'Baloo 2', cursive, sans-serif" }}
+            >
               {sentenceIndex + 1}/{total}
             </span>
           </div>

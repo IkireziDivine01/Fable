@@ -52,25 +52,27 @@ export function speakText(
   return () => window.speechSynthesis.cancel();
 }
 
+import type { RhubarbViseme } from '@/lib/immersive/types';
+import { nextTtsViseme } from '@/lib/immersive/lipSync';
+
 /** Drive lip-sync while TTS is active (no audio analyser available) */
 export function runTtsLipSync(
-  onOpenness: (value: number) => void,
+  onViseme: (value: RhubarbViseme) => void,
   isActive: () => boolean
 ): () => void {
   let frame = 0;
   const id = window.setInterval(() => {
     if (!isActive()) {
-      onOpenness(0);
+      onViseme('X');
       return;
     }
     frame += 1;
-    const wave = (Math.sin(frame * 0.35) + 1) / 2;
-    onOpenness(0.15 + wave * 0.65);
+    onViseme(nextTtsViseme(frame));
   }, 80);
 
   return () => {
     window.clearInterval(id);
-    onOpenness(0);
+    onViseme('X');
   };
 }
 

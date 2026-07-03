@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '../supabase-admin';
+import { normalizeCharacterAppearance, normalizeSceneSpec } from './sceneSpec';
 import type {
   AnimationData,
   EnvironmentType,
@@ -11,11 +12,14 @@ function parseCharacters(raw: unknown): StoryCharacterSlot[] {
   if (!Array.isArray(raw)) return [];
   return raw.map((item, index) => {
     const row = item as Record<string, unknown>;
+    const type = (row.type ?? row.character_type ?? 'grandma') as StoryCharacterSlot['type'];
     return {
       id: row.id ? String(row.id) : undefined,
       name: String(row.name ?? row.character_name ?? `Character ${index + 1}`),
-      type: (row.type ?? row.character_type ?? 'grandma') as StoryCharacterSlot['type'],
+      type,
       position: Number(row.position ?? index + 1),
+      description: row.description ? String(row.description) : undefined,
+      appearance: normalizeCharacterAppearance(row.appearance, type),
       mouthSyncTimings: Array.isArray(row.mouthSyncTimings)
         ? row.mouthSyncTimings
         : Array.isArray(row.mouth_sync_timings)
@@ -25,12 +29,21 @@ function parseCharacters(raw: unknown): StoryCharacterSlot[] {
   });
 }
 
-function parseAnimationData(raw: unknown): AnimationData {
+function parseAnimationData(
+  raw: unknown,
+  environment: EnvironmentType = 'village'
+): AnimationData {
   if (!raw || typeof raw !== 'object') return { version: 1 };
   const obj = raw as Record<string, unknown>;
+  const sceneSpec = normalizeSceneSpec(obj.sceneSpec, environment);
   return {
     version: Number(obj.version ?? 1),
     useAiVoice: obj.useAiVoice !== undefined ? Boolean(obj.useAiVoice) : undefined,
+    environmentDescription:
+      obj.environmentDescription !== undefined
+        ? String(obj.environmentDescription)
+        : undefined,
+    sceneSpec,
     sentenceTimings:
       obj.sentenceTimings && typeof obj.sentenceTimings === 'object'
         ? (obj.sentenceTimings as Record<string, MouthSyncTiming[]>)
@@ -39,13 +52,14 @@ function parseAnimationData(raw: unknown): AnimationData {
 }
 
 export function extractImmersiveMeta(row: Record<string, unknown>): ImmersiveStoryMeta {
+  const environment = (row.environment as EnvironmentType) ?? 'village';
   return {
-    environment: (row.environment as EnvironmentType) ?? 'village',
+    environment,
     characters: parseCharacters(row.characters),
     audioUrl: (row.audio_url as string) ?? null,
     videoUrl: (row.video_url as string) ?? null,
     isImmersive: Boolean(row.is_immersive),
-    animationData: parseAnimationData(row.animation_data),
+    animationData: parseAnimationData(row.animation_data, environment),
   };
 }
 

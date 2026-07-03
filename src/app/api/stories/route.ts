@@ -60,10 +60,18 @@ export async function POST(request: Request) {
     const themes = Array.isArray(body.themes) ? body.themes.map(String) : [];
     const sentences = (body.sentences ?? []) as StorySentenceInput[];
     const audioUrl = body.audioUrl ? String(body.audioUrl) : undefined;
+    const source = body.source ? String(body.source).trim() : undefined;
 
     if (!title || !transcript || sentences.length < 3) {
       return NextResponse.json(
         { error: 'Title, transcript, and at least 3 sentences are required.' },
+        { status: 400 }
+      );
+    }
+
+    if (generationType === 'manual' && role === 'parent' && !source) {
+      return NextResponse.json(
+        { error: 'Please cite the source for manually added stories (book, oral tradition, etc.).' },
         { status: 400 }
       );
     }
@@ -78,6 +86,7 @@ export async function POST(request: Request) {
       sentences,
       status: 'draft',
       audioUrl,
+      source,
     });
 
     return NextResponse.json(result);
