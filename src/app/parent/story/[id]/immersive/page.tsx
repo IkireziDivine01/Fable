@@ -37,7 +37,7 @@ export default function ParentImmersiveSetupPage() {
 
   if (loading) {
     return (
-      <StoryShell title="Immersive setup" subtitle="Loading…" maxWidth="lg">
+      <StoryShell title="Immersive setup" subtitle="Loading…" maxWidth="lg" embedded>
         <p className="text-[#524348]">Loading story…</p>
       </StoryShell>
     );
@@ -45,7 +45,13 @@ export default function ParentImmersiveSetupPage() {
 
   if (error) {
     return (
-      <StoryShell title="Immersive setup" backHref="/parent/dashboard" backLabel="Dashboard" maxWidth="lg">
+      <StoryShell
+        title="Immersive setup"
+        backHref="/parent/dashboard"
+        backLabel="Home"
+        maxWidth="lg"
+        embedded
+      >
         <StoryAlert message={error} />
       </StoryShell>
     );
@@ -56,8 +62,9 @@ export default function ParentImmersiveSetupPage() {
       title="Immersive setup"
       subtitle={title}
       backHref="/parent/dashboard"
-      backLabel="Dashboard"
+      backLabel="Home"
       maxWidth="lg"
+      embedded
     >
       <ImmersiveSetupWizard
         storyId={storyId}

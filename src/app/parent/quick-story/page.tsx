@@ -41,8 +41,9 @@ export default function ParentQuickStoryPage() {
       title="Quick story"
       subtitle="Two sentences → full tale"
       backHref="/parent/dashboard"
-      backLabel="Dashboard"
+      backLabel="Home"
       maxWidth="2xl"
+      embedded
     >
       <AIStoryGenerator
         apiPath="/api/claude/expand-story"

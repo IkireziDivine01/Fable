@@ -11,6 +11,8 @@ interface StoryShellProps {
   backHref?: string;
   backLabel?: string;
   maxWidth?: 'md' | 'lg' | 'xl' | '2xl' | '6xl';
+  /** Skip AppHeader / outer chrome when nested in ParentShell (or similar). */
+  embedded?: boolean;
 }
 
 const widthClass = {
@@ -28,23 +30,31 @@ export default function StoryShell({
   backHref,
   backLabel = 'Back',
   maxWidth = '6xl',
+  embedded = false,
 }: StoryShellProps) {
+  const content = (
+    <div className={`mx-auto ${widthClass[maxWidth]} px-4 py-8 md:px-8`}>
+      {backHref && (
+        <Link
+          href={backHref}
+          className="mb-6 inline-flex min-h-11 items-center gap-2 rounded-xl border border-[#e9d7d0] bg-white px-4 font-label-sm uppercase tracking-widest text-[#524348] transition hover:border-[#FF7956]/40 hover:text-[#520e33]"
+        >
+          ← {backLabel}
+        </Link>
+      )}
+
+      {children}
+    </div>
+  );
+
+  if (embedded) {
+    return content;
+  }
+
   return (
     <main className="min-h-screen bg-[#fff8f5] text-[#1e1b18]">
       <AppHeader title={title} subtitle={subtitle} />
-
-      <div className={`mx-auto ${widthClass[maxWidth]} px-4 py-8 md:px-8`}>
-        {backHref && (
-          <Link
-            href={backHref}
-            className="mb-6 inline-flex min-h-11 items-center gap-2 rounded-xl border border-[#e9d7d0] bg-white px-4 font-label-sm uppercase tracking-widest text-[#524348] transition hover:border-[#FF7956]/40 hover:text-[#520e33]"
-          >
-            ← {backLabel}
-          </Link>
-        )}
-
-        {children}
-      </div>
+      {content}
     </main>
   );
 }

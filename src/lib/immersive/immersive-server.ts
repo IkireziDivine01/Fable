@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '../supabase-admin';
+import { normalizeHotspots, normalizeSceneEvents } from './sceneEvents';
 import { normalizeCharacterAppearance, normalizeSceneSpec } from './sceneSpec';
 import type {
   AnimationData,
@@ -44,6 +45,8 @@ function parseAnimationData(
         ? String(obj.environmentDescription)
         : undefined,
     sceneSpec,
+    sceneEvents: normalizeSceneEvents(obj.sceneEvents, environment),
+    hotspots: normalizeHotspots(obj.hotspots),
     sentenceTimings:
       obj.sentenceTimings && typeof obj.sentenceTimings === 'object'
         ? (obj.sentenceTimings as Record<string, MouthSyncTiming[]>)

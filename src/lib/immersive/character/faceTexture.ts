@@ -108,17 +108,34 @@ export const mouthPaths: Record<RhubarbViseme, MouthPathFn> = {
   },
 };
 
+function faceRadii(faceShape: ResolvedCharacterConfig['faceShape']): {
+  rx: number;
+  ry: number;
+  cy: number;
+} {
+  switch (faceShape) {
+    case 'oval':
+      return { rx: 0.38, ry: 0.48, cy: 0.47 };
+    case 'elder':
+      return { rx: 0.45, ry: 0.4, cy: 0.5 };
+    case 'round':
+    default:
+      return { rx: 0.42, ry: 0.44, cy: 0.48 };
+  }
+}
+
 function drawFaceBase(
   ctx: CanvasRenderingContext2D,
   w: number,
   h: number,
-  skinColor: string
+  skinColor: string,
+  faceShape: ResolvedCharacterConfig['faceShape']
 ) {
+  const { rx, ry, cy } = faceRadii(faceShape);
   const cx = w / 2;
-  const cy = h * 0.48;
   ctx.fillStyle = skinColor;
   ctx.beginPath();
-  ctx.ellipse(cx, cy, w * 0.42, h * 0.44, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx, h * cy, w * rx, h * ry, 0, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -167,20 +184,27 @@ function drawEyes(
   }
 }
 
-function drawBrows(ctx: CanvasRenderingContext2D, w: number, h: number) {
-  const browY = h * 0.29;
+function drawBrows(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  hairColor: string,
+  faceShape: ResolvedCharacterConfig['faceShape']
+) {
+  const browY = faceShape === 'elder' ? h * 0.31 : h * 0.29;
   const spacing = w * 0.19;
   const cx = w / 2;
 
-  ctx.strokeStyle = '#1e1b18';
-  ctx.lineWidth = h * 0.016;
+  ctx.strokeStyle = hairColor;
+  ctx.lineWidth = faceShape === 'elder' ? h * 0.02 : h * 0.016;
   ctx.lineCap = 'round';
 
   for (const side of [-1, 1]) {
     const bx = cx + side * spacing;
+    const lift = faceShape === 'elder' ? h * 0.006 : h * 0.022;
     ctx.beginPath();
     ctx.moveTo(bx - w * 0.065, browY + side * h * 0.01);
-    ctx.quadraticCurveTo(bx, browY - h * 0.022, bx + w * 0.065, browY);
+    ctx.quadraticCurveTo(bx, browY - lift, bx + w * 0.065, browY);
     ctx.stroke();
   }
 }
@@ -223,11 +247,22 @@ function drawFace(
   const h = FACE_SIZE;
 
   ctx.clearRect(0, 0, w, h);
-  drawFaceBase(ctx, w, h, config.skinColor);
-  drawBrows(ctx, w, h);
+  drawFaceBase(ctx, w, h, config.skinColor, config.faceShape);
+  drawBrows(ctx, w, h, config.hairColor, config.faceShape);
   drawEyes(ctx, w, h, config.eyeColor, state.blinking);
   drawCheeks(ctx, w, h, config);
   drawMouth(ctx, w, h, state.viseme);
+}
+
+function faceConfigKey(config: ResolvedCharacterConfig): string {
+  return [
+    config.skinColor,
+    config.eyeColor,
+    config.hasBlush ? '1' : '0',
+    config.blushColor,
+    config.hairColor,
+    config.faceShape,
+  ].join('|');
 }
 
 export interface FaceTextureHandle {
@@ -251,19 +286,20 @@ export function createFaceTextureHandle(): FaceTextureHandle {
 
   let lastViseme: RhubarbViseme | null = null;
   let lastBlinking: boolean | null = null;
-  let lastSkinColor: string | null = null;
+  let lastConfigKey: string | null = null;
 
   const redraw = (config: ResolvedCharacterConfig, state: FaceDrawState): boolean => {
+    const configKey = faceConfigKey(config);
     if (
       state.viseme === lastViseme &&
       state.blinking === lastBlinking &&
-      config.skinColor === lastSkinColor
+      configKey === lastConfigKey
     ) {
       return false;
     }
     lastViseme = state.viseme;
     lastBlinking = state.blinking;
-    lastSkinColor = config.skinColor;
+    lastConfigKey = configKey;
     drawFace(ctx, config, state);
     texture.needsUpdate = true;
     return true;

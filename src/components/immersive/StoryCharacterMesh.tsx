@@ -12,7 +12,16 @@ import {
   SphereGeometry,
   PlaneGeometry,
 } from 'three';
-import type { CharacterType, RhubarbViseme } from '@/lib/immersive/types';
+import type {
+  CharacterAccessory,
+  CharacterType,
+  FaceShape,
+  GarmentStyle,
+  HairStyle,
+  PersonalityPose,
+  ReactionGesture,
+  RhubarbViseme,
+} from '@/lib/immersive/types';
 import { resolveCharacterConfig } from '@/lib/immersive/character/config';
 import { buildRig, type RigMeshSpec } from '@/lib/immersive/character/rig';
 import {
@@ -20,6 +29,11 @@ import {
   createFaceTextureHandle,
   nextBlinkDelay,
 } from '@/lib/immersive/character/faceTexture';
+import { getIdleMotionParams, sampleIdleMotion } from '@/lib/immersive/character/idleMotion';
+import {
+  GESTURE_DURATION_SEC,
+  sampleGesture,
+} from '@/lib/immersive/character/gestures';
 import { nextTtsViseme } from '@/lib/immersive/lipSync';
 import SpeechIndicator from './SpeechIndicator';
 
@@ -29,6 +43,7 @@ interface StoryCharacterMeshProps {
   garmentColor: string;
   accentColor: string;
   height: number;
+  heightScale?: number;
   mouthViseme: RhubarbViseme;
   isSpeaking: boolean;
   idleMotion?: boolean;
@@ -40,7 +55,16 @@ interface StoryCharacterMeshProps {
   hasBlush?: boolean;
   blushColor?: string;
   bodyPattern?: string | string[];
-  accessories?: Array<'headwrap' | 'necklace'>;
+  accessories?: CharacterAccessory[];
+  hairStyle?: HairStyle;
+  hairColor?: string;
+  faceShape?: FaceShape;
+  garmentStyle?: GarmentStyle;
+  personalityPose?: PersonalityPose;
+  /** One-shot reaction while this character is the active speaker */
+  reactionGesture?: ReactionGesture | null;
+  /** Changes when the line advances — restarts the gesture */
+  gestureKey?: number;
 }
 
 function RigMesh({ spec }: { spec: RigMeshSpec }) {
@@ -104,6 +128,7 @@ export default function StoryCharacterMesh({
   garmentColor,
   accentColor,
   height,
+  heightScale,
   mouthViseme,
   isSpeaking,
   idleMotion = false,
@@ -116,10 +141,22 @@ export default function StoryCharacterMesh({
   blushColor,
   bodyPattern,
   accessories,
+  hairStyle,
+  hairColor,
+  faceShape,
+  garmentStyle,
+  personalityPose,
+  reactionGesture = null,
+  gestureKey = 0,
 }: StoryCharacterMeshProps) {
   const groupRef = useRef<Group>(null);
+  const armLRef = useRef<Group>(null);
+  const armRRef = useRef<Group>(null);
   const mouthRef = useRef<Mesh>(null);
+  const tailRef = useRef<Mesh>(null);
   const previewFrameRef = useRef(0);
+  const gestureStartRef = useRef<number | null>(null);
+  const activeGestureRef = useRef<ReactionGesture | null>(null);
   const [blinking, setBlinking] = useState(false);
 
   const config = useMemo(
@@ -132,11 +169,17 @@ export default function StoryCharacterMesh({
           skinColor,
           garmentColor,
           accentColor,
+          heightScale,
           eyeColor,
           hasBlush,
           blushColor,
           bodyPattern,
           accessories,
+          hairStyle,
+          hairColor,
+          faceShape,
+          garmentStyle,
+          personalityPose,
         },
       }),
     [
@@ -147,16 +190,43 @@ export default function StoryCharacterMesh({
       characterName,
       characterType,
       eyeColor,
+      faceShape,
       garmentColor,
+      garmentStyle,
+      hairColor,
+      hairStyle,
       hasBlush,
+      heightScale,
+      personalityPose,
       skinColor,
     ]
   );
 
   const rig = useMemo(() => buildRig(characterType, config), [characterType, config]);
+  const idleParams = useMemo(
+    () => getIdleMotionParams(characterType, config.personalityPose),
+    [characterType, config.personalityPose]
+  );
 
   const faceHandle = useMemo(() => createFaceTextureHandle(), []);
   useEffect(() => () => faceHandle.dispose(), [faceHandle]);
+
+  const armLDraw = useMemo((): RigMeshSpec | null => {
+    if (rig.type !== 'humanoid') return null;
+    return {
+      ...rig.spec.armL,
+      position: [0, 0, 0],
+      rotation: [0, 0, 0],
+    };
+  }, [rig]);
+  const armRDraw = useMemo((): RigMeshSpec | null => {
+    if (rig.type !== 'humanoid') return null;
+    return {
+      ...rig.spec.armR,
+      position: [0, 0, 0],
+      rotation: [0, 0, 0],
+    };
+  }, [rig]);
 
   const faceStateRef = useRef({ viseme: 'X' as RhubarbViseme, blinking: false });
 
@@ -195,16 +265,75 @@ export default function StoryCharacterMesh({
     };
   }, [position, rig.type]);
 
+  useEffect(() => {
+    if (!isSpeaking || !reactionGesture) {
+      if (!isSpeaking) {
+        activeGestureRef.current = null;
+        gestureStartRef.current = null;
+      }
+      return;
+    }
+    activeGestureRef.current = reactionGesture;
+    gestureStartRef.current = null;
+  }, [isSpeaking, reactionGesture, gestureKey]);
+
   useFrame((state) => {
     if (!groupRef.current) return;
     const t = state.clock.elapsedTime;
+    const seed = position[0] * 2.3;
+
+    let gesturePose = sampleGesture(null, 0);
+    if (isSpeaking && activeGestureRef.current) {
+      if (gestureStartRef.current == null) gestureStartRef.current = t;
+      const duration = GESTURE_DURATION_SEC[activeGestureRef.current];
+      const progress = (t - gestureStartRef.current) / duration;
+      if (progress >= 1) {
+        activeGestureRef.current = null;
+        gestureStartRef.current = null;
+      } else {
+        gesturePose = sampleGesture(activeGestureRef.current, progress);
+      }
+    }
+
     const speakBob = isSpeaking ? Math.sin(t * 5) * 0.015 : 0;
-    const idleBob = idleMotion ? Math.sin(t * 1.4 + position[0]) * 0.012 : 0;
-    const idleSway = idleMotion ? Math.sin(t * 0.9 + position[0]) * 0.04 : 0;
-    groupRef.current.position.y = position[1] + speakBob + idleBob;
-    groupRef.current.rotation.y = idleSway;
+    const idle = idleMotion
+      ? sampleIdleMotion(idleParams, t, seed)
+      : { y: 0, rotY: 0, rotX: 0, rotZ: 0, tailRotZ: 0 };
+
+    groupRef.current.position.y = position[1] + speakBob + idle.y + gesturePose.bobY;
+    groupRef.current.rotation.y = idle.rotY;
+    groupRef.current.rotation.x = idle.rotX + gesturePose.headPitch;
+    groupRef.current.rotation.z = idle.rotZ;
+
+    if (rig.type === 'dog' && tailRef.current) {
+      const base = rig.spec.tail.rotation;
+      tailRef.current.rotation.set(
+        base[0],
+        base[1],
+        base[2] + idle.tailRotZ + gesturePose.tailBoost
+      );
+    }
 
     if (rig.type === 'humanoid') {
+      const armL = rig.spec.armL;
+      const armR = rig.spec.armR;
+      if (armLRef.current) {
+        const base = armL.rotation ?? [0, 0, 0];
+        armLRef.current.rotation.set(
+          base[0] + gesturePose.armL[0],
+          base[1] + gesturePose.armL[1],
+          base[2] + gesturePose.armL[2]
+        );
+      }
+      if (armRRef.current) {
+        const base = armR.rotation ?? [0, 0, 0];
+        armRRef.current.rotation.set(
+          base[0] + gesturePose.armR[0],
+          base[1] + gesturePose.armR[1],
+          base[2] + gesturePose.armR[2]
+        );
+      }
+
       const activeViseme: RhubarbViseme = isSpeaking
         ? previewSpeech
           ? nextTtsViseme(Math.floor(t * 9))
@@ -245,6 +374,14 @@ export default function StoryCharacterMesh({
           <RigMesh key={mesh.key} spec={mesh} />
         ))}
         <mesh
+          ref={tailRef}
+          position={spec.tail.position}
+          rotation={spec.tail.rotation}
+        >
+          <capsuleGeometry args={spec.tail.args} />
+          <meshStandardMaterial color={spec.tail.color} roughness={0.7} />
+        </mesh>
+        <mesh
           ref={mouthRef}
           position={spec.mouthPosition}
           scale={spec.mouthScale}
@@ -272,7 +409,21 @@ export default function StoryCharacterMesh({
         <RigMesh key={mesh.key} spec={mesh} />
       ))}
 
-      {/* Canvas face — plane overlay on head front (avoids sphere UV distortion) */}
+      <group
+        ref={armLRef}
+        position={spec.armL.position}
+        rotation={spec.armL.rotation}
+      >
+        {armLDraw && <RigMesh spec={armLDraw} />}
+      </group>
+      <group
+        ref={armRRef}
+        position={spec.armR.position}
+        rotation={spec.armR.rotation}
+      >
+        {armRDraw && <RigMesh spec={armRDraw} />}
+      </group>
+
       {facePlaneGeometry && (
         <mesh position={spec.facePlane.position} renderOrder={10}>
           <primitive object={facePlaneGeometry} attach="geometry" />

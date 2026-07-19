@@ -18,6 +18,7 @@ import {
   ENVIRONMENT_PRESETS,
 } from '@/lib/immersive/presets';
 import type { CharacterType, EnvironmentType, StoryCharacterSlot } from '@/lib/immersive/types';
+import CharacterAppearanceEditor from './CharacterAppearanceEditor';
 
 interface ImmersiveSetupWizardProps {
   storyId: string;
@@ -147,36 +148,43 @@ export default function ImmersiveSetupWizard({
           {characters.map((char, index) => (
             <div
               key={index}
-              className="grid gap-3 rounded-xl border border-[#e9d7d0] bg-[#fff8f5] p-4 sm:grid-cols-[1fr_1fr_auto]"
+              className="space-y-3 rounded-xl border border-[#e9d7d0] bg-[#fff8f5] p-4"
             >
-              <input
-                value={char.name}
-                onChange={(e) => updateCharacter(index, { name: e.target.value })}
-                placeholder="Name"
-                className={storyInputClass}
-              />
-              <select
-                value={char.type}
-                onChange={(e) =>
-                  updateCharacter(index, { type: e.target.value as CharacterType })
-                }
-                className={storyInputClass}
-              >
-                {CHARACTER_TYPES.map((type) => (
-                  <option key={type} value={type}>
-                    {CHARACTER_META[type].label}
-                  </option>
-                ))}
-              </select>
-              {characters.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => removeCharacter(index)}
-                  className="min-h-12 rounded-xl border border-[#e9d7d0] px-3 text-sm text-[#857278]"
+              <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+                <input
+                  value={char.name}
+                  onChange={(e) => updateCharacter(index, { name: e.target.value })}
+                  placeholder="Name"
+                  className={storyInputClass}
+                />
+                <select
+                  value={char.type}
+                  onChange={(e) =>
+                    updateCharacter(index, { type: e.target.value as CharacterType })
+                  }
+                  className={storyInputClass}
                 >
-                  Remove
-                </button>
-              )}
+                  {CHARACTER_TYPES.map((type) => (
+                    <option key={type} value={type}>
+                      {CHARACTER_META[type].label}
+                    </option>
+                  ))}
+                </select>
+                {characters.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeCharacter(index)}
+                    className="min-h-12 rounded-xl border border-[#e9d7d0] px-3 text-sm text-[#857278]"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+              <CharacterAppearanceEditor
+                character={char}
+                characterType={char.type}
+                onChange={(appearance) => updateCharacter(index, { appearance })}
+              />
             </div>
           ))}
         </div>

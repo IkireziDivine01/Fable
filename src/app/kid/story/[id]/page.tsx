@@ -5,7 +5,13 @@ import { useEffect, useState } from 'react';
 import ImmersiveStoryPlayer from '@/components/immersive/ImmersiveStoryPlayer';
 import type { KidSentence } from '@/components/story/KidStoryReader';
 import StoryShell, { StoryAlert } from '@/components/story/StoryShell';
-import type { EnvironmentType, StoryCharacterSlot, StorySceneSpec } from '@/lib/immersive/types';
+import type {
+  EnvironmentType,
+  SceneEvent,
+  StoryCharacterSlot,
+  StoryHotspot,
+  StorySceneSpec,
+} from '@/lib/immersive/types';
 
 export default function KidStoryReaderPage() {
   const params = useParams();
@@ -14,6 +20,8 @@ export default function KidStoryReaderPage() {
   const [sentences, setSentences] = useState<KidSentence[]>([]);
   const [environment, setEnvironment] = useState<EnvironmentType>('village');
   const [sceneSpec, setSceneSpec] = useState<StorySceneSpec | null>(null);
+  const [sceneEvents, setSceneEvents] = useState<Record<string, SceneEvent> | null>(null);
+  const [hotspots, setHotspots] = useState<StoryHotspot[] | null>(null);
   const [characters, setCharacters] = useState<StoryCharacterSlot[]>([
     { name: 'Grandmother', type: 'grandma', position: 1 },
   ]);
@@ -32,6 +40,8 @@ export default function KidStoryReaderPage() {
         setSentences(result.sentences ?? []);
         setEnvironment(result.immersive?.environment ?? 'village');
         setSceneSpec(result.immersive?.animationData?.sceneSpec ?? null);
+        setSceneEvents(result.immersive?.animationData?.sceneEvents ?? null);
+        setHotspots(result.immersive?.animationData?.hotspots ?? null);
         setCharacters(
           result.immersive?.characters?.length
             ? result.immersive.characters
@@ -87,6 +97,8 @@ export default function KidStoryReaderPage() {
       sentences={sentences}
       environment={environment}
       sceneSpec={sceneSpec}
+      sceneEvents={sceneEvents}
+      hotspots={hotspots}
       characters={characters}
       useAiVoice={useAiVoice}
       onComplete={handleComplete}

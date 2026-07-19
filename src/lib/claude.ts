@@ -4,7 +4,99 @@ const STORY_TOOL_NAME = 'submit_family_story';
 
 const ENVIRONMENT_TYPES = ['forest', 'home', 'village', 'school', 'market'] as const;
 const CHARACTER_TYPES = ['boy', 'girl', 'grandma', 'grandpa', 'dog', 'teacher'] as const;
-const SCENE_PROP_TYPES = ['tree', 'hut', 'fire', 'stall', 'board', 'rock', 'flower', 'bench'] as const;
+const SCENE_PROP_TYPES = [
+  'tree',
+  'hut',
+  'fire',
+  'stall',
+  'board',
+  'rock',
+  'flower',
+  'bench',
+  'banana_tree',
+  'path',
+  'water_jug',
+  'drum',
+  'goat',
+  'millet_field',
+] as const;
+const WEATHER_TYPES = ['clear', 'rain', 'fireflies', 'mist'] as const;
+const TIME_OF_DAY_TYPES = ['dawn', 'midday', 'dusk', 'night'] as const;
+const GESTURE_TYPES = ['nod', 'wave', 'clap', 'point', 'surprise'] as const;
+
+const SCENE_EVENT_SCHEMA = {
+  type: 'object',
+  description:
+    'Sticky scene change that applies from this sentence onward (lighting, props, weather, time of day). gesture is one-shot for the speaker on this sentence only.',
+  properties: {
+    weather: {
+      type: 'string',
+      enum: [...WEATHER_TYPES],
+      description: 'Atmospheric overlay — rain, fireflies at night, mist, or clear',
+    },
+    timeOfDay: {
+      type: 'string',
+      enum: [...TIME_OF_DAY_TYPES],
+      description: 'Sky mood — dawn (pink soft), midday (bright), dusk (orange), night (stars)',
+    },
+    gesture: {
+      type: 'string',
+      enum: [...GESTURE_TYPES],
+      description:
+        'Brief reaction for the speaking character on this sentence — nod, wave, clap, point, or surprise',
+    },
+    lightingColor: { type: 'string', description: 'New light hex color for this beat' },
+    lightingIntensity: {
+      type: 'number',
+      description: 'New light brightness 0.4-1.2',
+    },
+    backgroundColor: { type: 'string', description: 'Optional sky hex shift' },
+    fogColor: { type: 'string', description: 'Optional fog hex shift' },
+    addObjects: {
+      type: 'array',
+      maxItems: 3,
+      items: {
+        type: 'object',
+        properties: {
+          type: { type: 'string', enum: [...SCENE_PROP_TYPES] },
+          x: { type: 'number' },
+          z: { type: 'number' },
+          scale: { type: 'number' },
+        },
+        required: ['type', 'x'],
+      },
+      description: 'Props that appear from this sentence onward',
+    },
+    removeTypes: {
+      type: 'array',
+      items: { type: 'string', enum: [...SCENE_PROP_TYPES] },
+      description: 'Prop types to remove from the scene from this sentence onward',
+    },
+  },
+};
+
+const HOTSPOT_SCHEMA = {
+  type: 'object',
+  properties: {
+    propType: {
+      type: 'string',
+      enum: [...SCENE_PROP_TYPES],
+      description: 'Which prop kids can tap',
+    },
+    propIndex: {
+      type: 'number',
+      description: '0-based index among props of that type (usually 0)',
+    },
+    title: { type: 'string', description: 'Short English tooltip title' },
+    body: {
+      type: 'string',
+      description: '1-2 warm sentences — cultural note or story detail for kids',
+    },
+    titleRw: { type: 'string', description: 'Optional Kinyarwanda title' },
+    bodyRw: { type: 'string', description: 'Optional Kinyarwanda body' },
+  },
+  required: ['propType', 'title', 'body'],
+};
 
 const SCENE_SPEC_SCHEMA = {
   type: 'object',
@@ -74,6 +166,27 @@ const CHARACTER_APPEARANCE_SCHEMA = {
       items: { type: 'string', enum: ['headwrap', 'necklace'] },
       description: 'Optional worn accessories',
     },
+    hairStyle: {
+      type: 'string',
+      enum: ['short', 'braids', 'bun', 'afro', 'wrap'],
+      description: 'Hairstyle silhouette for the 3D character',
+    },
+    hairColor: { type: 'string', description: 'Hair hex color' },
+    faceShape: {
+      type: 'string',
+      enum: ['round', 'oval', 'elder'],
+      description: 'Face proportions for the canvas face texture',
+    },
+    garmentStyle: {
+      type: 'string',
+      enum: ['tunic', 'dress', 'sash', 'collar'],
+      description: 'Clothing silhouette — dress flares, collar for teachers, sash accent',
+    },
+    personalityPose: {
+      type: 'string',
+      enum: ['shy', 'confident', 'wise', 'playful'],
+      description: 'Idle animation personality — shy leans back, wise leans forward, playful bounces',
+    },
   },
   required: ['skinColor', 'garmentColor', 'accentColor'],
 };
@@ -103,6 +216,20 @@ const STORY_TOOL = {
           '2-3 vivid sentences describing the setting — sights, sounds, and mood — written for the family to read before entering the scene',
       },
       sceneSpec: SCENE_SPEC_SCHEMA,
+      sceneEvents: {
+        type: 'object',
+        description:
+          'Map of sentence index (as string keys "0","1",…) to scene changes. Include 2-4 meaningful beats only — e.g. night→fireflies, rain, market brightening. Keys must be valid sentence indices.',
+        additionalProperties: SCENE_EVENT_SCHEMA,
+      },
+      hotspots: {
+        type: 'array',
+        minItems: 2,
+        maxItems: 4,
+        description:
+          'Clickable props with short cultural tooltip cards — match propTypes that appear in sceneSpec.objects',
+        items: HOTSPOT_SCHEMA,
+      },
       characters: {
         type: 'array',
         minItems: 1,
@@ -134,11 +261,16 @@ const STORY_TOOL = {
           properties: {
             text: { type: 'string' },
             theme: { type: 'string', enum: ['Ubuntu', 'Ubwiyunge', 'Umuganda'] },
+            speaker: {
+              type: 'string',
+              description:
+                'Name of the character speaking this sentence — must exactly match one of characters[].name',
+            },
             kinyarwandaText: { type: 'string' },
             elderTalkingPoints: { type: 'string' },
             childPrompt: { type: 'string' },
           },
-          required: ['text', 'theme'],
+          required: ['text', 'theme', 'speaker'],
         },
       },
     },
@@ -149,6 +281,8 @@ const STORY_TOOL = {
       'environment',
       'environmentDescription',
       'sceneSpec',
+      'sceneEvents',
+      'hotspots',
       'characters',
       'sentences',
     ],
@@ -223,7 +357,11 @@ Rules:
 - environmentDescription should paint the scene families will enter in the 3D world
 - Include 1-3 characters who are central to the story
 - sceneSpec must be unique to THIS story: custom earth-tone hex colors and 4-7 props with varied x positions — never copy preset defaults
-- Each character needs a unique appearance with hex colors that reflect their personality and role in the narrative`;
+- Include 2-4 sceneEvents keyed by sentence index for lighting/weather/timeOfDay/prop/gesture beats that match the story
+- Prefer Rwanda-specific props when fitting: banana_tree, path, water_jug, drum, goat, millet_field
+- Include 2-4 hotspots on props that appear in the scene — short kid-friendly cultural notes
+- Each character needs a unique appearance with hex colors, hairStyle, garmentStyle, faceShape, and personalityPose that reflect their personality and role
+- Every sentence must include a speaker field matching exactly one character name from characters[]`;
 
   const userPrompt = `Create a family story from this prompt:\n${prompt}`;
   return callClaudeForStory(userPrompt, systemPrompt);
@@ -243,7 +381,10 @@ Rules:
 - Derive environment, environmentDescription, sceneSpec, and characters from the finished story
 - Character names must match who appears in the narrative
 - sceneSpec colors and prop layout must be unique to this story — tailor props to what happens in the narrative
-- Give every character a distinct appearance with custom hex colors`;
+- Include sceneEvents for 2-4 story beats (timeOfDay, weather, gestures, props) and hotspots for key props
+- Prefer cultural props (banana_tree, drum, water_jug, goat, millet_field, path) when the story setting fits
+- Give every character a distinct appearance with custom hex colors, hair, garment style, and personalityPose
+- Every sentence must include a speaker field matching exactly one character name from characters[]`;
 
   const userPrompt = `Expand these two sentences into a full story:\n1. ${sentenceOne}\n2. ${sentenceTwo}`;
   return callClaudeForStory(userPrompt, systemPrompt);

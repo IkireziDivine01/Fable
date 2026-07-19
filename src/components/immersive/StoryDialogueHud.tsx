@@ -159,6 +159,15 @@ export default function StoryDialogueHud({ compact = false }: StoryDialogueHudPr
                     skinColor={appearance.skinColor}
                     garmentColor={appearance.garmentColor}
                     accentColor={appearance.accentColor}
+                    eyeColor={appearance.eyeColor}
+                    hasBlush={appearance.hasBlush}
+                    blushColor={appearance.blushColor}
+                    bodyPattern={appearance.bodyPattern}
+                    accessories={appearance.accessories}
+                    hairStyle={appearance.hairStyle}
+                    hairColor={appearance.hairColor}
+                    faceShape={appearance.faceShape}
+                    garmentStyle={appearance.garmentStyle}
                     size={portraitSize}
                   />
                 )}

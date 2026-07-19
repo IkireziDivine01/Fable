@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import ImmersiveWorldPreview from './ImmersiveWorldPreview';
+import CharacterAppearanceEditor from './CharacterAppearanceEditor';
 import { storyInputClass, storyTextareaClass } from '@/components/story/StoryShell';
 import {
   CHARACTER_META,
@@ -87,7 +88,8 @@ export default function ImmersiveWorldSetup({
         <div>
           <p className="font-body-md text-[#1e1b18]">AI voice narration</p>
           <p className="text-sm text-[#857278]">
-            A warm computer voice reads each line if you skip recording your own.
+            Mateza reads Kinyarwanda lines with a natural accent; English uses the browser voice when
+            you skip recording your own.
           </p>
         </div>
       </label>
@@ -187,6 +189,11 @@ export default function ImmersiveWorldSetup({
                   placeholder="Who is this character in the story?"
                 />
               )}
+              <CharacterAppearanceEditor
+                character={char}
+                characterType={char.type}
+                onChange={(appearance) => updateCharacter(index, { appearance })}
+              />
             </div>
           ))}
         </div>

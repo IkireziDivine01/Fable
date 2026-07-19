@@ -17,7 +17,13 @@ import {
   storyInputClass,
   storyTextareaClass,
 } from '@/components/story/StoryShell';
-import type { EnvironmentType, StoryCharacterSlot, StorySceneSpec } from '@/lib/immersive/types';
+import type {
+  EnvironmentType,
+  SceneEvent,
+  StoryCharacterSlot,
+  StoryHotspot,
+  StorySceneSpec,
+} from '@/lib/immersive/types';
 import type { GeneratedStoryPayload } from '@/lib/storyHelpers';
 
 interface SavedSentence {
@@ -46,6 +52,8 @@ function applyStoryWorld(story: GeneratedStoryPayload): {
   environment: EnvironmentType;
   environmentDescription: string;
   sceneSpec: StorySceneSpec | null;
+  sceneEvents: Record<string, SceneEvent> | null;
+  hotspots: StoryHotspot[] | null;
   characters: StoryCharacterSlot[];
 } {
   const environment = story.environment ?? 'village';
@@ -53,6 +61,8 @@ function applyStoryWorld(story: GeneratedStoryPayload): {
     environment,
     environmentDescription: story.environmentDescription ?? '',
     sceneSpec: story.sceneSpec ?? null,
+    sceneEvents: story.sceneEvents ?? null,
+    hotspots: story.hotspots ?? null,
     characters:
       story.characters && story.characters.length > 0
         ? story.characters.map((c, i) => ({ ...c, position: i + 1 }))
@@ -86,6 +96,8 @@ export default function AIStoryGenerator({
   const [environment, setEnvironment] = useState<EnvironmentType>('village');
   const [environmentDescription, setEnvironmentDescription] = useState('');
   const [sceneSpec, setSceneSpec] = useState<StorySceneSpec | null>(null);
+  const [sceneEvents, setSceneEvents] = useState<Record<string, SceneEvent> | null>(null);
+  const [hotspots, setHotspots] = useState<StoryHotspot[] | null>(null);
   const [characters, setCharacters] = useState<StoryCharacterSlot[]>([
     { name: 'Grandmother', type: 'grandma', position: 1 },
   ]);
@@ -114,6 +126,8 @@ export default function AIStoryGenerator({
       setEnvironment(world.environment);
       setEnvironmentDescription(world.environmentDescription);
       setSceneSpec(world.sceneSpec);
+      setSceneEvents(world.sceneEvents);
+      setHotspots(world.hotspots);
       setCharacters(world.characters);
       setStep('edit');
     } catch (err) {
@@ -133,10 +147,12 @@ export default function AIStoryGenerator({
         characters: characters.filter((c) => c.name.trim()),
         isImmersive: true,
         animationData: {
-          version: 1,
+          version: 2,
           useAiVoice,
           environmentDescription: environmentDescription.trim() || undefined,
           sceneSpec: sceneSpec ?? undefined,
+          sceneEvents: sceneEvents ?? undefined,
+          hotspots: hotspots ?? undefined,
         },
       }),
     });

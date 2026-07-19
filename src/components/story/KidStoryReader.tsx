@@ -10,6 +10,7 @@ export interface KidSentence {
   id: string;
   sentence_text: string;
   sentence_order: number;
+  speaker?: string | null;
   kinyarwanda_text?: string | null;
   theme_label?: string | null;
   child_prompt?: string | null;
