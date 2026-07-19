@@ -7,6 +7,7 @@ import { StoryButton, StoryEyebrow, StoryLead, StoryPanel, StoryTitle } from '@/
 import { CHARACTER_META, ENVIRONMENT_LABELS } from '@/lib/immersive/presets';
 import { useImmersiveStore } from '@/lib/immersive/store';
 import type { EnvironmentType, StoryCharacterSlot, StorySceneSpec } from '@/lib/immersive/types';
+import { resolveActiveCharacterIndex } from '@/lib/immersive/speaker';
 import type { GeneratedStoryPayload } from '@/lib/storyHelpers';
 
 interface StoryExperiencePreviewProps {
@@ -36,7 +37,11 @@ export default function StoryExperiencePreview({
   const slots = characters.filter((c) => c.name.trim());
   const total = story.sentences.length;
   const current = story.sentences[sentenceIndex];
-  const activeCharacterIndex = slots.length > 0 ? sentenceIndex % slots.length : 0;
+  const activeCharacterIndex = resolveActiveCharacterIndex(
+    current,
+    slots,
+    sentenceIndex
+  );
 
   useEffect(() => {
     setActiveCharacterIndex(activeCharacterIndex);

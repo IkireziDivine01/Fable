@@ -41,8 +41,9 @@ export default function ParentCreateStoryPage() {
       title="Create story"
       subtitle="AI generation"
       backHref="/parent/dashboard"
-      backLabel="Dashboard"
+      backLabel="Home"
       maxWidth="2xl"
+      embedded
     >
       <AIStoryGenerator
         apiPath="/api/claude/generate-story"

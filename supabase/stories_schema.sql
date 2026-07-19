@@ -37,6 +37,9 @@ ALTER TABLE story_sentences
 ALTER TABLE story_sentences
   ADD COLUMN IF NOT EXISTS audio_url TEXT;
 
+ALTER TABLE story_sentences
+  ADD COLUMN IF NOT EXISTS speaker TEXT;
+
 -- Optional: public bucket for sentence audio (service role uploads; learners stream)
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('story-audio', 'story-audio', true)

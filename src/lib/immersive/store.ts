@@ -1,12 +1,23 @@
+import { useMemo } from 'react';
 import { create } from 'zustand';
+import {
+  mergeHotspots,
+  resolveSceneAtSentence,
+} from './sceneEvents';
+import { resolveEnvironmentPreset } from './sceneSpec';
 import type {
   DisplayLanguage,
+  EnvironmentPreset,
   EnvironmentType,
+  ReactionGesture,
   RhubarbViseme,
+  SceneEvent,
   StoryCharacterSlot,
+  StoryHotspot,
   StorySceneSpec,
+  TimeOfDay,
+  WeatherType,
 } from './types';
-import { resolveEnvironmentPreset } from './sceneSpec';
 
 export const CAMERA_ZOOM_MIN = 2.8;
 export const CAMERA_ZOOM_MAX = 7;
@@ -16,6 +27,9 @@ interface ImmersiveStore {
   storyId: string | null;
   environment: EnvironmentType;
   sceneSpec: StorySceneSpec | null;
+  sceneEvents: Record<string, SceneEvent>;
+  hotspots: StoryHotspot[];
+  activeHotspotId: string | null;
   characters: StoryCharacterSlot[];
   sentenceIndex: number;
   isPlaying: boolean;
@@ -28,11 +42,14 @@ interface ImmersiveStore {
   displayLanguage: DisplayLanguage;
   cameraZoom: number;
   worldPreviewActive: boolean;
+  ambientMuted: boolean;
 
   setPreviewWorld: (input: {
     environment: EnvironmentType;
     characters: StoryCharacterSlot[];
     sceneSpec?: StorySceneSpec | null;
+    sceneEvents?: Record<string, SceneEvent> | null;
+    hotspots?: StoryHotspot[] | null;
     useAiVoice?: boolean;
     worldPreview?: boolean;
   }) => void;
@@ -42,6 +59,8 @@ interface ImmersiveStore {
     environment: EnvironmentType;
     characters: StoryCharacterSlot[];
     sceneSpec?: StorySceneSpec | null;
+    sceneEvents?: Record<string, SceneEvent> | null;
+    hotspots?: StoryHotspot[] | null;
     isImmersive: boolean;
     useAiVoice?: boolean;
   }) => void;
@@ -54,13 +73,28 @@ interface ImmersiveStore {
   setPlaying: (playing: boolean) => void;
   setMouthViseme: (value: RhubarbViseme) => void;
   setActiveCharacterIndex: (index: number) => void;
+  setActiveHotspot: (id: string | null) => void;
+  setAmbientMuted: (muted: boolean) => void;
   reset: () => void;
+}
+
+function resolveHotspots(
+  hotspots: StoryHotspot[] | null | undefined,
+  sceneSpec: StorySceneSpec | null | undefined,
+  environment: EnvironmentType
+): StoryHotspot[] {
+  const objects =
+    sceneSpec?.objects ?? resolveEnvironmentPreset(environment, sceneSpec).objects;
+  return mergeHotspots(hotspots ?? undefined, objects);
 }
 
 export const useImmersiveStore = create<ImmersiveStore>((set) => ({
   storyId: null,
   environment: 'village',
   sceneSpec: null,
+  sceneEvents: {},
+  hotspots: [],
+  activeHotspotId: null,
   characters: [{ name: 'Grandmother', type: 'grandma', position: 1 }],
   sentenceIndex: 0,
   isPlaying: false,
@@ -73,12 +107,24 @@ export const useImmersiveStore = create<ImmersiveStore>((set) => ({
   displayLanguage: 'en',
   cameraZoom: CAMERA_ZOOM_DEFAULT,
   worldPreviewActive: false,
+  ambientMuted: false,
 
-  setPreviewWorld: ({ environment, characters, sceneSpec, useAiVoice, worldPreview }) =>
+  setPreviewWorld: ({
+    environment,
+    characters,
+    sceneSpec,
+    sceneEvents,
+    hotspots,
+    useAiVoice,
+    worldPreview,
+  }) =>
     set({
       storyId: 'preview',
       environment,
       sceneSpec: sceneSpec ?? null,
+      sceneEvents: sceneEvents ?? {},
+      hotspots: resolveHotspots(hotspots, sceneSpec, environment),
+      activeHotspotId: null,
       characters,
       useAiVoice: useAiVoice ?? false,
       isImmersive: true,
@@ -88,11 +134,23 @@ export const useImmersiveStore = create<ImmersiveStore>((set) => ({
 
   setWorldPreviewActive: (active) => set({ worldPreviewActive: active }),
 
-  init: ({ storyId, environment, characters, sceneSpec, isImmersive, useAiVoice }) =>
+  init: ({
+    storyId,
+    environment,
+    characters,
+    sceneSpec,
+    sceneEvents,
+    hotspots,
+    isImmersive,
+    useAiVoice,
+  }) =>
     set({
       storyId,
       environment,
       sceneSpec: sceneSpec ?? null,
+      sceneEvents: sceneEvents ?? {},
+      hotspots: resolveHotspots(hotspots, sceneSpec, environment),
+      activeHotspotId: null,
       characters:
         characters.length > 0 ? characters : [{ name: 'Grandmother', type: 'grandma', position: 1 }],
       isImmersive,
@@ -105,6 +163,7 @@ export const useImmersiveStore = create<ImmersiveStore>((set) => ({
       currentKinyarwandaText: '',
       displayLanguage: 'en',
       cameraZoom: CAMERA_ZOOM_DEFAULT,
+      ambientMuted: false,
     }),
 
   setCurrentLine: (text, kinyarwanda) =>
@@ -129,10 +188,15 @@ export const useImmersiveStore = create<ImmersiveStore>((set) => ({
   setPlaying: (playing) => set({ isPlaying: playing }),
   setMouthViseme: (value) => set({ mouthViseme: value }),
   setActiveCharacterIndex: (index) => set({ activeCharacterIndex: index }),
+  setActiveHotspot: (id) => set({ activeHotspotId: id }),
+  setAmbientMuted: (muted) => set({ ambientMuted: muted }),
   reset: () =>
     set({
       storyId: null,
       sceneSpec: null,
+      sceneEvents: {},
+      hotspots: [],
+      activeHotspotId: null,
       characters: [],
       sentenceIndex: 0,
       isPlaying: false,
@@ -145,11 +209,38 @@ export const useImmersiveStore = create<ImmersiveStore>((set) => ({
       displayLanguage: 'en',
       cameraZoom: CAMERA_ZOOM_DEFAULT,
       worldPreviewActive: false,
+      ambientMuted: false,
     }),
 }));
 
-export function useEnvironmentPreset() {
+export function useResolvedScene() {
   const environment = useImmersiveStore((s) => s.environment);
   const sceneSpec = useImmersiveStore((s) => s.sceneSpec);
-  return resolveEnvironmentPreset(environment, sceneSpec);
+  const sceneEvents = useImmersiveStore((s) => s.sceneEvents);
+  const sentenceIndex = useImmersiveStore((s) => s.sentenceIndex);
+  return useMemo(
+    () => resolveSceneAtSentence(environment, sceneSpec, sceneEvents, sentenceIndex),
+    [environment, sceneSpec, sceneEvents, sentenceIndex]
+  );
+}
+
+export function useEnvironmentPreset(): EnvironmentPreset {
+  const environment = useImmersiveStore((s) => s.environment);
+  const resolved = useResolvedScene();
+  return useMemo(
+    () => resolveEnvironmentPreset(environment, resolved.sceneSpec),
+    [environment, resolved.sceneSpec]
+  );
+}
+
+export function useActiveWeather(): WeatherType {
+  return useResolvedScene().weather;
+}
+
+export function useActiveTimeOfDay(): TimeOfDay {
+  return useResolvedScene().timeOfDay;
+}
+
+export function useActiveGesture(): ReactionGesture | null {
+  return useResolvedScene().gesture;
 }

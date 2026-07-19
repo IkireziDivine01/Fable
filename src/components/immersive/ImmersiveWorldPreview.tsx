@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { CHARACTER_META, ENVIRONMENT_LABELS } from '@/lib/immersive/presets';
 import { useImmersiveStore } from '@/lib/immersive/store';
 import type { EnvironmentType, StoryCharacterSlot, StorySceneSpec } from '@/lib/immersive/types';
+import { resolveActiveCharacterIndex } from '@/lib/immersive/speaker';
 import type { StorySentenceInput } from '@/lib/storyHelpers';
 
 const StoryCanvas = dynamic(() => import('./StoryCanvas'), { ssr: false });
@@ -53,8 +54,11 @@ export default function ImmersiveWorldPreview({
   const [autoTour, setAutoTour] = useState(true);
 
   const current = lines[sentenceIndex];
-  const activeCharacterIndex =
-    displaySlots.length > 0 ? sentenceIndex % displaySlots.length : 0;
+  const activeCharacterIndex = resolveActiveCharacterIndex(
+    current,
+    displaySlots,
+    sentenceIndex
+  );
   const activeCharacter = displaySlots[activeCharacterIndex];
 
   useEffect(() => {

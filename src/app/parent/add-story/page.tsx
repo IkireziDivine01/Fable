@@ -91,8 +91,9 @@ export default function ParentAddStoryPage() {
       title="Add a story"
       subtitle="From a book, oral tradition, or elsewhere"
       backHref="/parent/dashboard"
-      backLabel="Dashboard"
+      backLabel="Home"
       maxWidth="lg"
+      embedded
     >
       <StoryPanel>
         <form onSubmit={handleSubmit}>

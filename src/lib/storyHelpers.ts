@@ -1,12 +1,18 @@
 import { SYSTEM_THEME_NAMES, type SystemThemeName } from './themes';
 import {
+  normalizeHotspots,
+  normalizeSceneEvents,
+} from './immersive/sceneEvents';
+import {
   normalizeCharacterAppearance,
   normalizeSceneSpec,
 } from './immersive/sceneSpec';
 import type {
   CharacterType,
   EnvironmentType,
+  SceneEvent,
   StoryCharacterSlot,
+  StoryHotspot,
   StorySceneSpec,
 } from './immersive/types';
 
@@ -27,6 +33,8 @@ export interface StorySentenceInput {
   id?: string;
   sentenceText: string;
   sentenceOrder: number;
+  /** Character name speaking this line — must match a character in the story */
+  speaker?: string;
   kinyarwandaText?: string;
   themeLabel?: string;
   elderTalkingPoints?: string;
@@ -42,6 +50,8 @@ export interface GeneratedStoryPayload {
   environment?: EnvironmentType;
   environmentDescription?: string;
   sceneSpec?: StorySceneSpec;
+  sceneEvents?: Record<string, SceneEvent>;
+  hotspots?: StoryHotspot[];
   characters?: StoryCharacterSlot[];
 }
 
@@ -70,6 +80,7 @@ export interface StorySentenceRecord {
   story_id: string;
   sentence_text: string;
   sentence_order: number;
+  speaker?: string | null;
   kinyarwanda_text?: string | null;
   theme_label?: string | null;
   elder_talking_points?: string | null;
@@ -143,6 +154,7 @@ export function validateGeneratedStory(data: unknown): GeneratedStoryPayload {
           : row.child_prompt
             ? String(row.child_prompt)
             : undefined,
+        speaker: row.speaker ? String(row.speaker).trim() : undefined,
       };
     }).filter((s) => s.sentenceText.length > 0);
   } else if (transcript) {
@@ -168,6 +180,11 @@ export function validateGeneratedStory(data: unknown): GeneratedStoryPayload {
   const sceneSpec = environment
     ? normalizeSceneSpec(obj.sceneSpec, environment)
     : undefined;
+
+  const sceneEvents = environment
+    ? normalizeSceneEvents(obj.sceneEvents, environment)
+    : undefined;
+  const hotspots = normalizeHotspots(obj.hotspots);
 
   let characters: StoryCharacterSlot[] | undefined;
   if (Array.isArray(obj.characters) && obj.characters.length > 0) {
@@ -202,6 +219,8 @@ export function validateGeneratedStory(data: unknown): GeneratedStoryPayload {
     environment,
     environmentDescription,
     sceneSpec,
+    sceneEvents,
+    hotspots,
     characters,
   };
 }

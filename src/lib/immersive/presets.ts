@@ -11,7 +11,9 @@ export const ENVIRONMENT_PRESETS: Record<EnvironmentType, EnvironmentPreset> = {
     objects: [
       { type: 'hut', x: -2.5 },
       { type: 'hut', x: 2.8 },
-      { type: 'tree', x: 0.5 },
+      { type: 'banana_tree', x: 0.5 },
+      { type: 'path', x: 0, z: 0.4, scale: 1.1 },
+      { type: 'drum', x: -1.2, z: -0.6, scale: 0.85 },
     ],
     lighting: { color: '#FFE4B5', intensity: 0.95 },
   },
@@ -22,9 +24,10 @@ export const ENVIRONMENT_PRESETS: Record<EnvironmentType, EnvironmentPreset> = {
     groundColor: '#2D5016',
     accentColor: '#40916C',
     objects: [
-      { type: 'tree', x: -2 },
+      { type: 'banana_tree', x: -2 },
       { type: 'tree', x: 1.5 },
-      { type: 'tree', x: 3.2 },
+      { type: 'millet_field', x: 3.2, z: -1.8 },
+      { type: 'path', x: 0.2, z: 0.2 },
     ],
     lighting: { color: '#98D8AA', intensity: 0.75 },
   },
@@ -34,7 +37,11 @@ export const ENVIRONMENT_PRESETS: Record<EnvironmentType, EnvironmentPreset> = {
     fogColor: '#520e33',
     groundColor: '#6b3a2a',
     accentColor: '#FF7956',
-    objects: [{ type: 'fire', x: 0 }],
+    objects: [
+      { type: 'fire', x: 0 },
+      { type: 'water_jug', x: -1.4, z: -0.4, scale: 0.9 },
+      { type: 'drum', x: 1.3, z: -0.5, scale: 0.85 },
+    ],
     lighting: { color: '#FF7956', intensity: 0.85 },
   },
   school: {
@@ -55,6 +62,8 @@ export const ENVIRONMENT_PRESETS: Record<EnvironmentType, EnvironmentPreset> = {
     objects: [
       { type: 'stall', x: -1.5 },
       { type: 'stall', x: 2 },
+      { type: 'water_jug', x: 0.2, z: -0.3, scale: 0.8 },
+      { type: 'goat', x: -3, z: -1.2, scale: 0.9 },
     ],
     lighting: { color: '#FBD38D', intensity: 0.9 },
   },

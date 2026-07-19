@@ -4,7 +4,6 @@ import {
 } from './character/config';
 import { getEnvironmentPreset } from './presets';
 import type {
-  CharacterAccessory,
   EnvironmentObject,
   EnvironmentPreset,
   EnvironmentType,
@@ -13,7 +12,7 @@ import type {
 } from './types';
 
 const HEX_COLOR = /^#[0-9A-Fa-f]{6}$/;
-const VALID_PROP_TYPES = new Set([
+export const VALID_PROP_TYPES = new Set([
   'tree',
   'hut',
   'fire',
@@ -22,18 +21,32 @@ const VALID_PROP_TYPES = new Set([
   'rock',
   'flower',
   'bench',
+  // Rwanda-specific cultural props
+  'banana_tree',
+  'path',
+  'water_jug',
+  'drum',
+  'goat',
+  'millet_field',
 ]);
 
-function sanitizeHex(value: unknown, fallback: string): string {
+export function sanitizeHex(value: unknown, fallback: string): string {
   const s = String(value ?? '').trim();
   return HEX_COLOR.test(s) ? s : fallback;
 }
 
-function clamp(value: number, min: number, max: number): number {
+export function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-function parseObjects(raw: unknown, fallback: EnvironmentObject[]): EnvironmentObject[] {
+/** Parse prop list without enforcing a minimum count (for scene-event addObjects). */
+export function parseEnvironmentObjects(
+  raw: unknown,
+  options?: { fallback?: EnvironmentObject[]; minCount?: number; maxCount?: number }
+): EnvironmentObject[] {
+  const fallback = options?.fallback ?? [];
+  const minCount = options?.minCount ?? 0;
+  const maxCount = options?.maxCount ?? 8;
   if (!Array.isArray(raw)) return fallback;
 
   const objects: EnvironmentObject[] = [];
@@ -43,14 +56,18 @@ function parseObjects(raw: unknown, fallback: EnvironmentObject[]): EnvironmentO
     if (!VALID_PROP_TYPES.has(type)) continue;
     const parsed: EnvironmentObject = {
       type,
-      x: clamp(Number(row.x ?? 0), -4.5, 4.5),
+      x: clampNumber(Number(row.x ?? 0), -4.5, 4.5),
     };
-    if (row.z !== undefined) parsed.z = clamp(Number(row.z), -3.5, 1.5);
-    if (row.scale !== undefined) parsed.scale = clamp(Number(row.scale), 0.65, 1.5);
+    if (row.z !== undefined) parsed.z = clampNumber(Number(row.z), -3.5, 1.5);
+    if (row.scale !== undefined) parsed.scale = clampNumber(Number(row.scale), 0.65, 1.5);
     objects.push(parsed);
   }
 
-  return objects.length >= 2 ? objects.slice(0, 8) : fallback;
+  return objects.length >= minCount ? objects.slice(0, maxCount) : fallback;
+}
+
+function parseObjects(raw: unknown, fallback: EnvironmentObject[]): EnvironmentObject[] {
+  return parseEnvironmentObjects(raw, { fallback, minCount: 2, maxCount: 8 });
 }
 
 export function normalizeSceneSpec(
@@ -76,7 +93,7 @@ export function normalizeSceneSpec(
         lightingRaw.color ?? obj.lightingColor,
         base.lighting.color
       ),
-      intensity: clamp(
+      intensity: clampNumber(
         Number(lightingRaw.intensity ?? obj.lightingIntensity ?? base.lighting.intensity),
         0.4,
         1.2
@@ -106,23 +123,14 @@ export function resolveEnvironmentPreset(
   };
 }
 
-export function resolveCharacterAppearance(slot: StoryCharacterSlot): {
-  skinColor: string;
-  garmentColor: string;
-  accentColor: string;
-  height: number;
-  eyeColor: string;
-  hasBlush: boolean;
-  blushColor: string;
-  bodyPattern?: string | string[];
-  accessories?: CharacterAccessory[];
-} {
+export function resolveCharacterAppearance(slot: StoryCharacterSlot) {
   const config = resolveCharacterConfig(slot);
   return {
     skinColor: config.skinColor,
     garmentColor: config.garmentColors[0],
     accentColor: config.accentColor,
     height: config.height,
+    heightScale: slot.appearance?.heightScale,
     eyeColor: config.eyeColor,
     hasBlush: config.hasBlush,
     blushColor: config.blushColor,
@@ -130,5 +138,10 @@ export function resolveCharacterAppearance(slot: StoryCharacterSlot): {
       slot.appearance?.bodyPattern ??
       (config.garmentColors.length > 1 ? config.garmentColors : undefined),
     accessories: config.accessories,
+    hairStyle: config.hairStyle,
+    hairColor: config.hairColor,
+    faceShape: config.faceShape,
+    garmentStyle: config.garmentStyle,
+    personalityPose: config.personalityPose,
   };
 }

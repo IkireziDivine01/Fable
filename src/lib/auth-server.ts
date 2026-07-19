@@ -59,26 +59,39 @@ function stripExtendedProfileFields(row: Record<string, unknown>) {
   return base;
 }
 
+function isLegacyRoleCheckError(error: { message?: string; code?: string } | null) {
+  return (
+    error?.code === '23514' ||
+    Boolean(error?.message?.includes('role_check')) ||
+    Boolean(error?.message?.includes('violates check constraint'))
+  );
+}
+
 async function insertUserProfile(row: Record<string, unknown>) {
   const mode = await getProfileSchemaMode();
+  const baseRow = mode === 'legacy' ? stripExtendedProfileFields(row) : row;
 
-  if (mode === 'legacy') {
-    if (row.account_status === 'pending') {
-      throw new Error(
-        `Learner signup with parent approval requires extra database columns. ${MIGRATION_HINT}`
-      );
-    }
-
-    const { error } = await supabaseAdmin
-      .from('user_profiles')
-      .insert([stripExtendedProfileFields(row)]);
-
-    if (error) throw new Error(error.message);
-    return;
+  if (mode === 'legacy' && row.account_status === 'pending') {
+    throw new Error(
+      `Learner signup with parent approval requires extra database columns. ${MIGRATION_HINT}`
+    );
   }
 
-  const { error } = await supabaseAdmin.from('user_profiles').insert([row]);
-  if (error) throw new Error(error.message);
+  // Canonical role is "elder"; some DBs still check for legacy "author".
+  const rowsToTry =
+    baseRow.role === 'elder'
+      ? [baseRow, { ...baseRow, role: 'author' }]
+      : [baseRow];
+
+  let lastMessage = 'Failed to create user profile';
+  for (const candidate of rowsToTry) {
+    const { error } = await supabaseAdmin.from('user_profiles').insert([candidate]);
+    if (!error) return;
+    lastMessage = error.message;
+    if (!isLegacyRoleCheckError(error)) throw new Error(lastMessage);
+  }
+
+  throw new Error(`${lastMessage}. ${MIGRATION_HINT}`);
 }
 
 function randomCode(): string {
@@ -271,23 +284,33 @@ export async function createInvitation(input: {
   nameHint?: string;
 }) {
   const code = randomCode();
+  const row = {
+    household_id: input.householdId,
+    code,
+    invited_by: input.invitedBy,
+    name_hint: input.nameHint?.trim() || null,
+  };
 
-  const { data, error } = await supabaseAdmin
-    .from('invitations')
-    .insert([
-      {
-        household_id: input.householdId,
-        code,
-        role: input.role,
-        invited_by: input.invitedBy,
-        name_hint: input.nameHint?.trim() || null,
-      },
-    ])
-    .select('code, expires_at')
-    .single();
+  // Canonical role is "elder"; some DBs still check for legacy "author".
+  const rolesToTry = input.role === 'elder' ? (['elder', 'author'] as const) : ([input.role] as const);
 
-  if (error) throw new Error(error.message);
-  return data;
+  let lastMessage = 'Failed to create invitation';
+  for (const role of rolesToTry) {
+    const { data, error } = await supabaseAdmin
+      .from('invitations')
+      .insert([{ ...row, role }])
+      .select('code, expires_at')
+      .single();
+
+    if (!error && data) return data;
+
+    lastMessage = error?.message ?? lastMessage;
+    if (!isLegacyRoleCheckError(error)) throw new Error(lastMessage);
+  }
+
+  throw new Error(
+    `${lastMessage}. Author invites need the role check updated — ${MIGRATION_HINT}`
+  );
 }
 
 export async function validateInvitationCode(code: string) {

@@ -1,9 +1,7 @@
 'use client';
 
-import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useCallback, useEffect, useState } from 'react';
-import AppHeader from '@/components/AppHeader';
 import { displayRole, normalizeRole } from '@/lib/roles';
 
 interface FamilyMember {
@@ -179,9 +177,9 @@ export default function FamilyPage() {
 
   if (status === 'loading' || loading) {
     return (
-      <main className="min-h-screen bg-[#fff8f5] px-5 py-8">
-        <p className="text-center text-[#524348]">Loading family…</p>
-      </main>
+      <div className="px-5 py-8 md:px-8">
+        <p className="text-[#524348]">Loading family…</p>
+      </div>
     );
   }
 
@@ -191,24 +189,15 @@ export default function FamilyPage() {
   const pendingInvitations = invitations.filter((i) => !i.used_at);
 
   return (
-    <main className="min-h-screen bg-[#fff8f5] text-[#1e1b18]">
-      <AppHeader title="Family" subtitle="Members · approvals · invites" />
-
-      <div className="mx-auto max-w-4xl px-5 py-10 md:px-8">
-        <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="font-headline-lg text-headline-lg">Your household</h1>
-            <p className="mt-1 font-body-md text-[#524348]">
-              Approve learners, invite authors, and keep everyone connected.
-            </p>
-          </div>
-          <Link
-            href="/parent/dashboard"
-            className="rounded-xl border border-[#d7c1c7] px-4 py-2 font-body-md text-sm text-[#524348] hover:border-[#FF7956]"
-          >
-            ← Dashboard
-          </Link>
-        </div>
+    <div className="px-5 py-8 md:px-8 md:py-10">
+      <div className="mx-auto max-w-4xl">
+        <header className="mb-8">
+          <p className="mb-1 font-label-sm uppercase tracking-widest text-[#857278]">Family</p>
+          <h1 className="font-headline-lg text-headline-lg">Your household</h1>
+          <p className="mt-2 font-body-md text-[#524348]">
+            Approve learners, invite authors, and keep everyone connected.
+          </p>
+        </header>
 
         {error && (
           <div className="mb-6 rounded-xl border border-[#ffdbd2] bg-[#fff8f5] px-4 py-3 text-sm text-[#a7391c]">
@@ -383,6 +372,6 @@ export default function FamilyPage() {
           )}
         </section>
       </div>
-    </main>
+    </div>
   );
 }
