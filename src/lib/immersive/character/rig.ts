@@ -69,8 +69,8 @@ function torsoBandMeshes(
         kind: 'torso',
         position: [0, centerY - (garmentStyle === 'dress' ? height * 0.02 : 0), 0],
         color: colors[0],
-        roughness: 0.7,
-        args: [topR, botR, torsoH, 12],
+        roughness: 0.82,
+        args: [topR, botR, torsoH, 16],
         castShadow: true,
       },
     ];
@@ -88,8 +88,8 @@ function torsoBandMeshes(
       kind: 'cylinder' as const,
       position: [0, baseY + i * bandHeight, 0] as [number, number, number],
       color,
-      roughness: 0.7,
-      args: [rTop - t * 0.004, rBot - t * 0.004, bandHeight * 1.02, 12],
+      roughness: 0.82,
+      args: [rTop - t * 0.004, rBot - t * 0.004, bandHeight * 1.02, 16],
       castShadow: true,
     };
   });
@@ -361,8 +361,8 @@ export function buildRig(
       kind: 'capsule',
       position: [-0.12, height * 0.24, 0],
       color: garmentColors[0],
-      roughness: 0.75,
-      args: [0.07, height * 0.3, 6, 12],
+      roughness: 0.82,
+      args: [0.07, height * 0.3, 6, 14],
       castShadow: true,
     },
     {
@@ -370,8 +370,8 @@ export function buildRig(
       kind: 'capsule',
       position: [0.12, height * 0.24, 0],
       color: garmentColors[0],
-      roughness: 0.75,
-      args: [0.07, height * 0.3, 6, 12],
+      roughness: 0.82,
+      args: [0.07, height * 0.3, 6, 14],
       castShadow: true,
     },
     ...torsoBandMeshes(height, garmentColors, torsoCenterY, garmentStyle),
@@ -381,8 +381,8 @@ export function buildRig(
       kind: 'sphere',
       position: [-shoulderInset * 0.85, height * 0.62, 0],
       color: garmentColors[0],
-      roughness: 0.72,
-      args: [height * 0.09, 10, 10],
+      roughness: 0.8,
+      args: [height * 0.09, 14, 14],
       castShadow: true,
     },
     {
@@ -390,8 +390,8 @@ export function buildRig(
       kind: 'sphere',
       position: [shoulderInset * 0.85, height * 0.62, 0],
       color: garmentColors[0],
-      roughness: 0.72,
-      args: [height * 0.09, 10, 10],
+      roughness: 0.8,
+      args: [height * 0.09, 14, 14],
       castShadow: true,
     },
     {
@@ -399,8 +399,8 @@ export function buildRig(
       kind: 'cylinder',
       position: [0, height * 0.735, 0.02],
       color: skinColor,
-      roughness: 0.6,
-      args: [0.065, 0.075, height * 0.14, 10],
+      roughness: 0.48,
+      args: [0.065, 0.075, height * 0.14, 14],
       castShadow: true,
     },
     {
@@ -409,8 +409,8 @@ export function buildRig(
       position: [0, headY, 0.04],
       scale: faceShape === 'oval' ? [0.92, 1.08, 0.95] : faceShape === 'elder' ? [1.05, 0.95, 1] : [1, 1, 1],
       color: skinColor,
-      roughness: 0.55,
-      args: [headRadius, 20, 20],
+      roughness: 0.42,
+      args: [headRadius, 28, 24],
       castShadow: true,
     },
     ...hairMeshes(hairStyle, hairColor, headY, headRadius, forceHeadwrap),
@@ -423,8 +423,8 @@ export function buildRig(
     position: [-shoulderInset, height * 0.58, 0.02],
     rotation: [0, 0, 0.55],
     color: skinColor,
-    roughness: 0.65,
-    args: [0.055, armLength, 6, 10],
+    roughness: 0.48,
+    args: [0.055, armLength, 6, 14],
     castShadow: true,
   };
   const armR: RigMeshSpec = {
@@ -433,8 +433,8 @@ export function buildRig(
     position: [shoulderInset, height * 0.58, 0.02],
     rotation: [0, 0, -0.55],
     color: skinColor,
-    roughness: 0.65,
-    args: [0.055, armLength, 6, 10],
+    roughness: 0.48,
+    args: [0.055, armLength, 6, 14],
     castShadow: true,
   };
 
@@ -454,7 +454,8 @@ export function buildRig(
       headRadius,
       isElder,
       facePlane: {
-        position: [0, headY, headFrontZ + headRadius * 0.04],
+        // Slightly inset so the canvas face sits flush with the head sphere
+        position: [0, headY, headFrontZ + headRadius * 0.01],
         size: [faceWidth, faceHeight],
       },
     },

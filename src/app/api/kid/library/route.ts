@@ -16,8 +16,10 @@ export async function GET() {
 
     const stories = await getKidLibraryWithProgress(ctx.householdId, ctx.authorId);
 
+    const unread = stories.filter((s) => s.readStatus === 'new');
     const counts = {
-      new: stories.filter((s) => s.readStatus === 'new').length,
+      new: unread.filter((s) => s.isFresh).length,
+      unread: unread.length,
       reading: stories.filter((s) => s.readStatus === 'reading').length,
       completed: stories.filter((s) => s.readStatus === 'completed').length,
       total: stories.length,

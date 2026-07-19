@@ -67,6 +67,15 @@ interface StoryCharacterMeshProps {
   gestureKey?: number;
 }
 
+function isSkinMesh(key: string) {
+  return (
+    key === 'head' ||
+    key === 'neck' ||
+    key.startsWith('arm-') ||
+    key.includes('skin')
+  );
+}
+
 function RigMesh({ spec }: { spec: RigMeshSpec }) {
   const geometry = useMemo(() => {
     switch (spec.kind) {
@@ -109,15 +118,25 @@ function RigMesh({ spec }: { spec: RigMeshSpec }) {
 
   useEffect(() => () => geometry.dispose(), [geometry]);
 
+  const skin = isSkinMesh(spec.key);
+  const cloth = spec.key.includes('torso') || spec.key.startsWith('leg-') || spec.key.startsWith('shoulder');
+
   return (
     <mesh
       position={spec.position}
       rotation={spec.rotation}
       scale={spec.scale}
       castShadow={spec.castShadow}
+      receiveShadow
     >
       <primitive object={geometry} attach="geometry" />
-      <meshStandardMaterial color={spec.color} roughness={spec.roughness ?? 0.7} />
+      <meshStandardMaterial
+        color={spec.color}
+        roughness={spec.roughness ?? (skin ? 0.45 : cloth ? 0.82 : 0.7)}
+        metalness={skin ? 0.02 : 0.04}
+        emissive={skin ? spec.color : '#000000'}
+        emissiveIntensity={skin ? 0.04 : 0}
+      />
     </mesh>
   );
 }
@@ -427,14 +446,17 @@ export default function StoryCharacterMesh({
       {facePlaneGeometry && (
         <mesh position={spec.facePlane.position} renderOrder={10}>
           <primitive object={facePlaneGeometry} attach="geometry" />
-          <meshBasicMaterial
+          <meshStandardMaterial
             map={faceHandle.texture}
             transparent
-            toneMapped={false}
+            alphaTest={0.08}
+            roughness={0.55}
+            metalness={0}
+            toneMapped
             depthWrite={false}
             polygonOffset
-            polygonOffsetFactor={-2}
-            polygonOffsetUnits={-2}
+            polygonOffsetFactor={-1}
+            polygonOffsetUnits={-1}
           />
         </mesh>
       )}
@@ -468,6 +490,8 @@ function CharacterOverlays({
   characterName?: string;
   showNameLabel: boolean;
 }) {
+  const name = characterName?.trim();
+
   return (
     <>
       {isSpeaking && (
@@ -478,11 +502,12 @@ function CharacterOverlays({
           zIndexRange={[100, 0]}
           style={{ pointerEvents: 'none' }}
         >
-          <SpeechIndicator />
+          <SpeechIndicator name={name} />
         </Html>
       )}
 
-      {showNameLabel && characterName && (
+      {/* Bottom nameplate for preview / non-speaking labeled characters */}
+      {showNameLabel && name && !isSpeaking && (
         <Html
           position={[0, isDog ? height * 0.15 : 0.08, 0.2]}
           center
@@ -505,7 +530,7 @@ function CharacterOverlays({
               whiteSpace: 'nowrap',
             }}
           >
-            {characterName}
+            {name}
           </div>
         </Html>
       )}

@@ -133,9 +133,21 @@ function drawFaceBase(
 ) {
   const { rx, ry, cy } = faceRadii(faceShape);
   const cx = w / 2;
-  ctx.fillStyle = skinColor;
+  // Soft edge so the face plane blends into the head sphere
+  const gradient = ctx.createRadialGradient(
+    cx,
+    h * cy,
+    Math.min(w, h) * 0.22,
+    cx,
+    h * cy,
+    Math.max(w * rx, h * ry) * 1.05
+  );
+  gradient.addColorStop(0, skinColor);
+  gradient.addColorStop(0.78, skinColor);
+  gradient.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = gradient;
   ctx.beginPath();
-  ctx.ellipse(cx, h * cy, w * rx, h * ry, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx, h * cy, w * rx * 1.02, h * ry * 1.02, 0, 0, Math.PI * 2);
   ctx.fill();
 }
 

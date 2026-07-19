@@ -4,7 +4,12 @@ import { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { CHARACTER_META, ENVIRONMENT_LABELS } from '@/lib/immersive/presets';
 import { useImmersiveStore } from '@/lib/immersive/store';
-import type { EnvironmentType, StoryCharacterSlot, StorySceneSpec } from '@/lib/immersive/types';
+import type {
+  EnvironmentType,
+  SceneBrief,
+  StoryCharacterSlot,
+  StorySceneSpec,
+} from '@/lib/immersive/types';
 import { resolveActiveCharacterIndex } from '@/lib/immersive/speaker';
 import type { StorySentenceInput } from '@/lib/storyHelpers';
 
@@ -14,6 +19,7 @@ interface ImmersiveWorldPreviewProps {
   environment: EnvironmentType;
   environmentDescription: string;
   sceneSpec?: StorySceneSpec | null;
+  sceneBrief?: SceneBrief | null;
   characters: StoryCharacterSlot[];
   sentences: StorySentenceInput[];
   storyTitle: string;
@@ -24,6 +30,7 @@ export default function ImmersiveWorldPreview({
   environment,
   environmentDescription,
   sceneSpec = null,
+  sceneBrief = null,
   characters,
   sentences,
   storyTitle,
@@ -67,8 +74,14 @@ export default function ImmersiveWorldPreview({
   }, [setWorldPreviewActive]);
 
   useEffect(() => {
-    setPreviewWorld({ environment, characters: displaySlots, sceneSpec, worldPreview: true });
-  }, [environment, displaySlots, sceneSpec, setPreviewWorld]);
+    setPreviewWorld({
+      environment,
+      characters: displaySlots,
+      sceneSpec,
+      sceneBrief,
+      worldPreview: true,
+    });
+  }, [environment, displaySlots, sceneSpec, sceneBrief, setPreviewWorld]);
 
   useEffect(() => {
     setActiveCharacterIndex(activeCharacterIndex);

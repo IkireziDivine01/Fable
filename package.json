@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "generate:prop-models": "node scripts/generate-prop-models.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
@@ -15,6 +16,7 @@
     "@supabase/auth-js": "^2.108.2",
     "@supabase/supabase-js": "^2.108.2",
     "@tanstack/react-query": "^5.101.0",
+    "@withmateza/sdk": "^0.3.3",
     "axios": "^1.18.0",
     "lucide-react": "^1.23.0",
     "next": "16.2.9",
