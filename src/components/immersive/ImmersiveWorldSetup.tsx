@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import ImmersiveWorldPreview from './ImmersiveWorldPreview';
 import CharacterAppearanceEditor from './CharacterAppearanceEditor';
 import { storyInputClass, storyTextareaClass } from '@/components/story/StoryShell';
@@ -11,13 +11,20 @@ import {
   ENVIRONMENT_PRESETS,
 } from '@/lib/immersive/presets';
 import { useImmersiveStore } from '@/lib/immersive/store';
-import type { CharacterType, EnvironmentType, StoryCharacterSlot, StorySceneSpec } from '@/lib/immersive/types';
+import type {
+  CharacterType,
+  EnvironmentType,
+  SceneBrief,
+  StoryCharacterSlot,
+  StorySceneSpec,
+} from '@/lib/immersive/types';
 import type { StorySentenceInput } from '@/lib/storyHelpers';
 
 interface ImmersiveWorldSetupProps {
   environment: EnvironmentType;
   environmentDescription?: string;
   sceneSpec?: StorySceneSpec | null;
+  sceneBrief?: SceneBrief | null;
   characters: StoryCharacterSlot[];
   useAiVoice: boolean;
   onEnvironmentChange: (env: EnvironmentType) => void;
@@ -34,6 +41,7 @@ export default function ImmersiveWorldSetup({
   environment,
   environmentDescription = '',
   sceneSpec = null,
+  sceneBrief = null,
   characters,
   useAiVoice,
   onEnvironmentChange,
@@ -45,10 +53,18 @@ export default function ImmersiveWorldSetup({
   storySentences = [],
 }: ImmersiveWorldSetupProps) {
   const setPreviewWorld = useImmersiveStore((s) => s.setPreviewWorld);
+  const [showBiomePicker, setShowBiomePicker] = useState(false);
 
   useEffect(() => {
-    setPreviewWorld({ environment, characters, sceneSpec, useAiVoice, worldPreview: true });
-  }, [environment, characters, sceneSpec, useAiVoice, setPreviewWorld]);
+    setPreviewWorld({
+      environment,
+      characters,
+      sceneSpec,
+      sceneBrief,
+      useAiVoice,
+      worldPreview: true,
+    });
+  }, [environment, characters, sceneSpec, sceneBrief, useAiVoice, setPreviewWorld]);
 
   const addCharacter = () => {
     if (characters.length >= 3) return;
@@ -73,6 +89,7 @@ export default function ImmersiveWorldSetup({
         environment={environment}
         environmentDescription={environmentDescription}
         sceneSpec={sceneSpec}
+        sceneBrief={sceneBrief}
         characters={characters}
         sentences={storySentences}
         storyTitle={storyTitle}
@@ -94,49 +111,77 @@ export default function ImmersiveWorldSetup({
         </div>
       </label>
 
-      <div>
-        <p className="mb-3 font-label-sm uppercase tracking-widest text-[#857278]">Setting</p>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {(Object.keys(ENVIRONMENT_PRESETS) as EnvironmentType[]).map((key) => {
-            const preset = ENVIRONMENT_PRESETS[key];
-            const selected = environment === key;
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() => onEnvironmentChange(key)}
-                className={`rounded-xl border p-4 text-left transition ${
-                  selected
-                    ? 'border-[#520e33] ring-2 ring-[#520e33]/20'
-                    : 'border-[#e9d7d0] hover:border-[#C4A574]'
-                }`}
-              >
-                <div
-                  className="mb-3 h-12 rounded-lg"
-                  style={{
-                    background: `linear-gradient(180deg, ${preset.fogColor}, ${preset.groundColor})`,
-                  }}
-                />
-                <p className="font-label-sm uppercase tracking-widest text-[#33001d]">
-                  {ENVIRONMENT_LABELS[key]}
-                </p>
-              </button>
-            );
-          })}
-        </div>
-        {showAiDescriptions && onEnvironmentDescriptionChange && (
-          <label className="mt-4 block">
-            <span className="mb-2 block font-label-sm uppercase tracking-widest text-[#857278]">
-              Setting description
-            </span>
+      {(showAiDescriptions || environmentDescription) && (
+        <div>
+          <p className="mb-2 font-label-sm uppercase tracking-widest text-[#857278]">
+            Your story&apos;s place
+          </p>
+          <p className="mb-3 text-sm text-[#857278]">
+            This is the unique world for this tale — not a generic biome label.
+          </p>
+          {showAiDescriptions && onEnvironmentDescriptionChange ? (
             <textarea
               value={environmentDescription}
               onChange={(e) => onEnvironmentDescriptionChange(e.target.value)}
-              rows={3}
+              rows={4}
               className={storyTextareaClass}
               placeholder="Describe the world your family will enter…"
             />
-          </label>
+          ) : (
+            <p className="rounded-xl border border-[#e9d7d0] bg-[#fff8f5] px-4 py-3 font-body-md leading-relaxed text-[#524348]">
+              {environmentDescription}
+            </p>
+          )}
+        </div>
+      )}
+
+      <div>
+        <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+          <p className="font-label-sm uppercase tracking-widest text-[#857278]">3D base</p>
+          <p className="text-sm text-[#857278]">
+            {ENVIRONMENT_LABELS[environment]} · visual foundation only
+          </p>
+        </div>
+        <p className="mb-3 text-sm text-[#857278]">
+          The story above shapes the unique world. Change the 3D base only if the preview foundation
+          feels wrong.
+        </p>
+        <button
+          type="button"
+          onClick={() => setShowBiomePicker((open) => !open)}
+          className="mb-3 text-sm text-[#520e33] underline-offset-2 hover:underline"
+        >
+          {showBiomePicker ? 'Hide 3D base options' : 'Change 3D base'}
+        </button>
+        {showBiomePicker && (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {(Object.keys(ENVIRONMENT_PRESETS) as EnvironmentType[]).map((key) => {
+              const preset = ENVIRONMENT_PRESETS[key];
+              const selected = environment === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => onEnvironmentChange(key)}
+                  className={`rounded-xl border p-4 text-left transition ${
+                    selected
+                      ? 'border-[#520e33] ring-2 ring-[#520e33]/20'
+                      : 'border-[#e9d7d0] hover:border-[#C4A574]'
+                  }`}
+                >
+                  <div
+                    className="mb-3 h-12 rounded-lg"
+                    style={{
+                      background: `linear-gradient(180deg, ${preset.fogColor}, ${preset.groundColor})`,
+                    }}
+                  />
+                  <p className="font-label-sm uppercase tracking-widest text-[#33001d]">
+                    {ENVIRONMENT_LABELS[key]}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
         )}
       </div>
 

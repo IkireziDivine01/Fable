@@ -18,7 +18,9 @@ import {
   storyTextareaClass,
 } from '@/components/story/StoryShell';
 import type {
+  EngagementActivity,
   EnvironmentType,
+  SceneBrief,
   SceneEvent,
   StoryCharacterSlot,
   StoryHotspot,
@@ -51,18 +53,22 @@ interface AIStoryGeneratorProps {
 function applyStoryWorld(story: GeneratedStoryPayload): {
   environment: EnvironmentType;
   environmentDescription: string;
+  sceneBrief: SceneBrief | null;
   sceneSpec: StorySceneSpec | null;
   sceneEvents: Record<string, SceneEvent> | null;
   hotspots: StoryHotspot[] | null;
+  engagementActivities: EngagementActivity[] | null;
   characters: StoryCharacterSlot[];
 } {
   const environment = story.environment ?? 'village';
   return {
     environment,
     environmentDescription: story.environmentDescription ?? '',
+    sceneBrief: story.sceneBrief ?? null,
     sceneSpec: story.sceneSpec ?? null,
     sceneEvents: story.sceneEvents ?? null,
     hotspots: story.hotspots ?? null,
+    engagementActivities: story.engagementActivities ?? null,
     characters:
       story.characters && story.characters.length > 0
         ? story.characters.map((c, i) => ({ ...c, position: i + 1 }))
@@ -95,9 +101,13 @@ export default function AIStoryGenerator({
 
   const [environment, setEnvironment] = useState<EnvironmentType>('village');
   const [environmentDescription, setEnvironmentDescription] = useState('');
+  const [sceneBrief, setSceneBrief] = useState<SceneBrief | null>(null);
   const [sceneSpec, setSceneSpec] = useState<StorySceneSpec | null>(null);
   const [sceneEvents, setSceneEvents] = useState<Record<string, SceneEvent> | null>(null);
   const [hotspots, setHotspots] = useState<StoryHotspot[] | null>(null);
+  const [engagementActivities, setEngagementActivities] = useState<
+    EngagementActivity[] | null
+  >(null);
   const [characters, setCharacters] = useState<StoryCharacterSlot[]>([
     { name: 'Grandmother', type: 'grandma', position: 1 },
   ]);
@@ -125,9 +135,11 @@ export default function AIStoryGenerator({
       setStory(generated);
       setEnvironment(world.environment);
       setEnvironmentDescription(world.environmentDescription);
+      setSceneBrief(world.sceneBrief);
       setSceneSpec(world.sceneSpec);
       setSceneEvents(world.sceneEvents);
       setHotspots(world.hotspots);
+      setEngagementActivities(world.engagementActivities);
       setCharacters(world.characters);
       setStep('edit');
     } catch (err) {
@@ -150,9 +162,11 @@ export default function AIStoryGenerator({
           version: 2,
           useAiVoice,
           environmentDescription: environmentDescription.trim() || undefined,
+          sceneBrief: sceneBrief ?? undefined,
           sceneSpec: sceneSpec ?? undefined,
           sceneEvents: sceneEvents ?? undefined,
           hotspots: hotspots ?? undefined,
+          engagementActivities: engagementActivities ?? undefined,
         },
       }),
     });
@@ -319,6 +333,7 @@ export default function AIStoryGenerator({
             environment={environment}
             environmentDescription={environmentDescription}
             sceneSpec={sceneSpec}
+            sceneBrief={sceneBrief}
             characters={characters}
             useAiVoice={useAiVoice}
             onEnvironmentChange={setEnvironment}
@@ -355,6 +370,7 @@ export default function AIStoryGenerator({
             environment={environment}
             environmentDescription={environmentDescription}
             sceneSpec={sceneSpec}
+            sceneBrief={sceneBrief}
             characters={characters}
             onBack={() => setStep('world')}
             onContinue={() => void saveDraft()}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { StoryPanel } from '@/components/story/StoryShell';
 
 interface GenerationStage {
@@ -10,38 +10,117 @@ interface GenerationStage {
   glyph: string;
 }
 
-const STAGES: GenerationStage[] = [
-  {
-    id: 'thread',
-    verb: 'Gathering the thread',
-    detail: 'Your prompt is the first stitch in a family tapestry.',
-    glyph: '✦',
+interface PlaceFolkCopy {
+  placeVerb: string;
+  placeDetail: string;
+  folkVerb: string;
+  folkDetail: string;
+}
+
+type PromptBucket = 'epic' | 'market' | 'forest' | 'home' | 'school' | 'default';
+
+const PLACE_FOLK_BY_BUCKET: Record<PromptBucket, PlaceFolkCopy> = {
+  epic: {
+    placeVerb: 'Raising the court',
+    placeDetail: 'Royal grounds, cattle paths, and courage are settling into place.',
+    folkVerb: 'Calling the elders',
+    folkDetail: 'Heroes, keepers of law, and brave hearts step into the tale.',
   },
-  {
-    id: 'story',
-    verb: 'Weaving the story',
-    detail: 'Sentences are taking shape — values, voices, and heart.',
-    glyph: '◈',
+  market: {
+    placeVerb: 'Opening the market',
+    placeDetail: 'Stalls, voices, and trade smells are gathering around the story.',
+    folkVerb: 'Calling the traders',
+    folkDetail: 'Sellers, cousins, and bargainers step into the aisle.',
   },
-  {
-    id: 'place',
-    verb: 'Painting the hills',
-    detail: 'Homesteads, paths, and sky are settling into place.',
-    glyph: '△',
+  forest: {
+    placeVerb: 'Opening the canopy',
+    placeDetail: 'Trees, footpaths, and quiet wildlife are settling into place.',
+    folkVerb: 'Calling the wanderers',
+    folkDetail: 'Guides, children, and forest friends step under the leaves.',
   },
-  {
-    id: 'folk',
-    verb: 'Calling your characters',
-    detail: 'Grandmother, guides, and friends step into the scene.',
-    glyph: '○',
+  home: {
+    placeVerb: 'Warming the hearth',
+    placeDetail: 'Courtyard light, cooking fire, and familiar walls are taking shape.',
+    folkVerb: 'Calling the family',
+    folkDetail: 'Grandparents, children, and close kin step into the room.',
   },
-  {
-    id: 'finish',
-    verb: 'Lighting the fire',
-    detail: 'One last breath — your world is almost ready to enter.',
-    glyph: '✺',
+  school: {
+    placeVerb: 'Opening the schoolyard',
+    placeDetail: 'Benches, lessons, and bright morning air are settling into place.',
+    folkVerb: 'Calling the learners',
+    folkDetail: 'Teachers, classmates, and curious minds step into the day.',
   },
-];
+  default: {
+    placeVerb: 'Shaping the place',
+    placeDetail: 'Light, paths, and the story’s own landmarks are settling into place.',
+    folkVerb: 'Calling your characters',
+    folkDetail: 'The people at the heart of this tale step into the scene.',
+  },
+};
+
+function detectPromptBucket(prompt: string | undefined): PromptBucket {
+  const text = (prompt ?? '').toLowerCase();
+  if (!text.trim()) return 'default';
+
+  if (
+    /\b(ndabaga|legend|epic|hero|king|queen|royal|court|warrior|cattle|inyambo|kingdom)\b/.test(
+      text
+    )
+  ) {
+    return 'epic';
+  }
+  if (/\b(market|isoko|stall|trade|vendor|bargain)\b/.test(text)) {
+    return 'market';
+  }
+  if (/\b(forest|ishyamba|hunt|jungle|canopy|woods|tree)\b/.test(text)) {
+    return 'forest';
+  }
+  if (/\b(school|ishuri|classroom|teacher|lesson|pupil)\b/.test(text)) {
+    return 'school';
+  }
+  if (
+    /\b(home|urugo|hearth|grandma|grandfather|grandmother|family|kitchen|fire)\b/.test(text)
+  ) {
+    return 'home';
+  }
+  return 'default';
+}
+
+function buildStages(promptPreview?: string): GenerationStage[] {
+  const copy = PLACE_FOLK_BY_BUCKET[detectPromptBucket(promptPreview)];
+  return [
+    {
+      id: 'thread',
+      verb: 'Gathering the thread',
+      detail: 'Your prompt is the first stitch in a family tapestry.',
+      glyph: '✦',
+    },
+    {
+      id: 'story',
+      verb: 'Weaving the story',
+      detail: 'Sentences are taking shape — values, voices, and heart.',
+      glyph: '◈',
+    },
+    {
+      id: 'place',
+      verb: copy.placeVerb,
+      detail: copy.placeDetail,
+      glyph: '△',
+    },
+    {
+      id: 'folk',
+      verb: copy.folkVerb,
+      detail: copy.folkDetail,
+      glyph: '○',
+    },
+    {
+      id: 'finish',
+      verb: 'Lighting the fire',
+      detail: 'One last breath — your world is almost ready to enter.',
+      glyph: '✺',
+    },
+  ];
+}
 
 const STORYTELLING_TIPS = [
   'In Rwanda, stories around the fire pass wisdom from one generation to the next.',
@@ -72,19 +151,24 @@ export default function StoryGenerationScreen({
   onCancel,
   progressOverride = null,
 }: StoryGenerationScreenProps) {
+  const stages = useMemo(() => buildStages(promptPreview), [promptPreview]);
   const [stageIndex, setStageIndex] = useState(0);
   const [tipIndex, setTipIndex] = useState(0);
   const [simProgress, setSimProgress] = useState(4);
 
-  const stage = STAGES[stageIndex] ?? STAGES[0];
+  const stage = stages[stageIndex] ?? stages[0];
   const displayProgress = progressOverride ?? simProgress;
 
   useEffect(() => {
+    setStageIndex(0);
+  }, [promptPreview]);
+
+  useEffect(() => {
     const stageTimer = window.setInterval(() => {
-      setStageIndex((i) => (i < STAGES.length - 1 ? i + 1 : i));
+      setStageIndex((i) => (i < stages.length - 1 ? i + 1 : i));
     }, 3200);
     return () => window.clearInterval(stageTimer);
-  }, []);
+  }, [stages.length]);
 
   useEffect(() => {
     const tipTimer = window.setInterval(() => {
@@ -99,12 +183,12 @@ export default function StoryGenerationScreen({
     const tick = window.setInterval(() => {
       setSimProgress((p) => {
         if (p >= 92) return p;
-        const bump = stageIndex === STAGES.length - 1 ? 1.2 : 2.4;
+        const bump = stageIndex === stages.length - 1 ? 1.2 : 2.4;
         return Math.min(92, p + bump);
       });
     }, 400);
     return () => window.clearInterval(tick);
-  }, [progressOverride, stageIndex]);
+  }, [progressOverride, stageIndex, stages.length]);
 
   useEffect(() => {
     if (progressOverride == null) return;
@@ -177,7 +261,7 @@ export default function StoryGenerationScreen({
         </div>
 
         <ul className="mb-8 flex flex-wrap justify-center gap-2">
-          {STAGES.map((s, i) => {
+          {stages.map((s, i) => {
             const unlocked = i <= stageIndex;
             const current = i === stageIndex;
             return (

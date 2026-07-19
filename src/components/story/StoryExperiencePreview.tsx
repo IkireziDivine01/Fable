@@ -6,7 +6,12 @@ import ImmersivePreviewPanel from '@/components/immersive/ImmersivePreviewPanel'
 import { StoryButton, StoryEyebrow, StoryLead, StoryPanel, StoryTitle } from '@/components/story/StoryShell';
 import { CHARACTER_META, ENVIRONMENT_LABELS } from '@/lib/immersive/presets';
 import { useImmersiveStore } from '@/lib/immersive/store';
-import type { EnvironmentType, StoryCharacterSlot, StorySceneSpec } from '@/lib/immersive/types';
+import type {
+  EnvironmentType,
+  SceneBrief,
+  StoryCharacterSlot,
+  StorySceneSpec,
+} from '@/lib/immersive/types';
 import { resolveActiveCharacterIndex } from '@/lib/immersive/speaker';
 import type { GeneratedStoryPayload } from '@/lib/storyHelpers';
 
@@ -15,6 +20,7 @@ interface StoryExperiencePreviewProps {
   environment: EnvironmentType;
   environmentDescription: string;
   sceneSpec?: StorySceneSpec | null;
+  sceneBrief?: SceneBrief | null;
   characters: StoryCharacterSlot[];
   onBack: () => void;
   onContinue: () => void;
@@ -26,6 +32,7 @@ export default function StoryExperiencePreview({
   environment,
   environmentDescription,
   sceneSpec = null,
+  sceneBrief = null,
   characters,
   onBack,
   onContinue,
@@ -64,6 +71,7 @@ export default function StoryExperiencePreview({
           <ImmersivePreviewPanel
             environment={environment}
             sceneSpec={sceneSpec}
+            sceneBrief={sceneBrief}
             characters={slots}
             previewText={current?.sentenceText ?? story.title}
             heightClass="h-[320px] md:h-[400px]"

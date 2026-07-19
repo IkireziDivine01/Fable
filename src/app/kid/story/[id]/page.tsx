@@ -2,16 +2,45 @@
 
 import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import ImmersiveStoryPlayer from '@/components/immersive/ImmersiveStoryPlayer';
+import ImmersiveStoryPlayer, {
+  type ActivityLogEvent,
+} from '@/components/immersive/ImmersiveStoryPlayer';
 import type { KidSentence } from '@/components/story/KidStoryReader';
 import StoryShell, { StoryAlert } from '@/components/story/StoryShell';
 import type {
+  EngagementActivity,
   EnvironmentType,
+  SceneBrief,
   SceneEvent,
   StoryCharacterSlot,
   StoryHotspot,
   StorySceneSpec,
 } from '@/lib/immersive/types';
+
+async function postStoryActivity(
+  storyId: string,
+  eventType: string,
+  metadata: Record<string, unknown>
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await fetch(`/api/stories/${storyId}/activity`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ eventType, metadata }),
+      keepalive: true,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      return { ok: false, error: String(body.error ?? res.status) };
+    }
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Network error',
+    };
+  }
+}
 
 export default function KidStoryReaderPage() {
   const params = useParams();
@@ -20,8 +49,12 @@ export default function KidStoryReaderPage() {
   const [sentences, setSentences] = useState<KidSentence[]>([]);
   const [environment, setEnvironment] = useState<EnvironmentType>('village');
   const [sceneSpec, setSceneSpec] = useState<StorySceneSpec | null>(null);
+  const [sceneBrief, setSceneBrief] = useState<SceneBrief | null>(null);
   const [sceneEvents, setSceneEvents] = useState<Record<string, SceneEvent> | null>(null);
   const [hotspots, setHotspots] = useState<StoryHotspot[] | null>(null);
+  const [engagementActivities, setEngagementActivities] = useState<
+    EngagementActivity[] | null
+  >(null);
   const [characters, setCharacters] = useState<StoryCharacterSlot[]>([
     { name: 'Grandmother', type: 'grandma', position: 1 },
   ]);
@@ -40,8 +73,12 @@ export default function KidStoryReaderPage() {
         setSentences(result.sentences ?? []);
         setEnvironment(result.immersive?.environment ?? 'village');
         setSceneSpec(result.immersive?.animationData?.sceneSpec ?? null);
+        setSceneBrief(result.immersive?.animationData?.sceneBrief ?? null);
         setSceneEvents(result.immersive?.animationData?.sceneEvents ?? null);
         setHotspots(result.immersive?.animationData?.hotspots ?? null);
+        setEngagementActivities(
+          result.immersive?.animationData?.engagementActivities ?? null
+        );
         setCharacters(
           result.immersive?.characters?.length
             ? result.immersive.characters
@@ -49,11 +86,14 @@ export default function KidStoryReaderPage() {
         );
         setUseAiVoice(Boolean(result.immersive?.animationData?.useAiVoice));
 
-        await fetch(`/api/stories/${storyId}/activity`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ eventType: 'STORY_STARTED', metadata: { mode: 'immersive' } }),
-        });
+        // Mark unread → reading; never block opening the story if logging fails
+        void postStoryActivity(storyId, 'STORY_STARTED', { mode: 'immersive' }).then(
+          (result) => {
+            if (!result.ok) {
+              console.warn('Could not mark story as started:', result.error);
+            }
+          }
+        );
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load story');
       } finally {
@@ -63,15 +103,31 @@ export default function KidStoryReaderPage() {
     if (storyId) load();
   }, [storyId]);
 
-  const handleComplete = async () => {
-    await fetch(`/api/stories/${storyId}/activity`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        eventType: 'STORY_COMPLETED',
-        metadata: { mode: 'immersive', sentenceCount: sentences.length },
-      }),
+  const handleComplete = async (): Promise<boolean> => {
+    // Retry once — this is what flips the shelf + parent dashboard to "finished"
+    let result = await postStoryActivity(storyId, 'STORY_COMPLETED', {
+      mode: 'immersive',
+      sentenceCount: sentences.length,
     });
+    if (!result.ok) {
+      result = await postStoryActivity(storyId, 'STORY_COMPLETED', {
+        mode: 'immersive',
+        sentenceCount: sentences.length,
+        retry: true,
+      });
+    }
+    if (!result.ok) {
+      console.warn('Could not log story completion:', result.error);
+      return false;
+    }
+    return true;
+  };
+
+  const handleActivityLog = (
+    eventType: ActivityLogEvent,
+    metadata: Record<string, unknown>
+  ) => {
+    void postStoryActivity(storyId, eventType, metadata);
   };
 
   if (loading) {
@@ -97,11 +153,14 @@ export default function KidStoryReaderPage() {
       sentences={sentences}
       environment={environment}
       sceneSpec={sceneSpec}
+      sceneBrief={sceneBrief}
       sceneEvents={sceneEvents}
       hotspots={hotspots}
+      engagementActivities={engagementActivities}
       characters={characters}
       useAiVoice={useAiVoice}
       onComplete={handleComplete}
+      onActivityLog={handleActivityLog}
     />
   );
 }

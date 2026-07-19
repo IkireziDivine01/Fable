@@ -65,6 +65,9 @@ export default function StoryDialogueHud({ compact = false }: StoryDialogueHudPr
   const currentKinyarwandaText = useImmersiveStore((s) => s.currentKinyarwandaText);
   const displayLanguage = useImmersiveStore((s) => s.displayLanguage);
   const isPlaying = useImmersiveStore((s) => s.isPlaying);
+  const sentenceIndex = useImmersiveStore((s) => s.sentenceIndex);
+  const sentenceCount = useImmersiveStore((s) => s.sentenceCount);
+  const onDialogueAdvance = useImmersiveStore((s) => s.onDialogueAdvance);
 
   const character = characters[activeCharacterIndex] ?? characters[0];
   const meta = character ? CHARACTER_META[character.type] : null;
@@ -81,6 +84,8 @@ export default function StoryDialogueHud({ compact = false }: StoryDialogueHudPr
   const roleLabel = meta?.label ?? 'Character';
   const typedText = useTypewriter(displayText, isPlaying);
   const lineComplete = !isPlaying && typedText.length >= displayText.length;
+  const isLastLine = sentenceCount > 0 && sentenceIndex >= sentenceCount - 1;
+  const advanceLabel = isLastLine ? 'Finish' : 'Next';
 
   if (!displayText) return null;
 
@@ -205,18 +210,6 @@ export default function StoryDialogueHud({ compact = false }: StoryDialogueHudPr
                   )}
                 </div>
 
-                {lineComplete && (
-                  <span
-                    className="flex items-center gap-0.5 text-[10px] uppercase tracking-widest text-[#FF7956]"
-                    style={{
-                      fontFamily: "'Fredoka', sans-serif",
-                      animation: 'continue-bounce 1.2s ease-in-out infinite',
-                    }}
-                  >
-                    Next
-                    <ChevronRight size={14} strokeWidth={2.5} />
-                  </span>
-                )}
               </div>
 
               <p
@@ -230,6 +223,37 @@ export default function StoryDialogueHud({ compact = false }: StoryDialogueHudPr
                   <span className="ml-0.5 inline-block h-[1em] w-0.5 animate-pulse bg-[#FF7956]" />
                 )}
               </p>
+
+              {onDialogueAdvance && (
+                <button
+                  type="button"
+                  onClick={() => onDialogueAdvance()}
+                  className={`mt-2.5 flex min-h-11 w-full items-center justify-center gap-1 rounded-xl font-medium tracking-wide transition active:scale-[0.98] ${
+                    isLastLine
+                      ? 'bg-[#FF7956] text-white shadow-md shadow-[#FF7956]/30'
+                      : lineComplete
+                        ? 'bg-[#520e33] text-[#ffdbd2] ring-1 ring-[#C4A574]/40'
+                        : 'bg-[#241810]/80 text-[#ffdbd2]/90 ring-1 ring-[#C4A574]/25'
+                  }`}
+                  style={{ fontFamily: "'Fredoka', sans-serif" }}
+                >
+                  <span
+                    style={{
+                      animation: lineComplete
+                        ? 'continue-bounce 1.2s ease-in-out infinite'
+                        : undefined,
+                    }}
+                    className="flex items-center gap-1"
+                  >
+                    {isPlaying && !lineComplete
+                      ? isLastLine
+                        ? 'Skip to finish'
+                        : 'Skip ahead'
+                      : advanceLabel}
+                    <ChevronRight size={18} strokeWidth={2.5} />
+                  </span>
+                </button>
+              )}
             </div>
           </div>
         </div>

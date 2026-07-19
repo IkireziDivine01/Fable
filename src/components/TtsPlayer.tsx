@@ -47,7 +47,7 @@ export default function TtsPlayer() {
       const response = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: trimmed }),
+        body: JSON.stringify({ text: trimmed, voice: 'female' }),
       });
 
       if (!response.ok) {
@@ -55,10 +55,12 @@ export default function TtsPlayer() {
         throw new Error(payload?.error || `Speech generation failed (${response.status})`);
       }
 
-      const blob = await response.blob();
-      if (!blob.size) {
+      const mimeType = response.headers.get('content-type')?.split(';')[0]?.trim() || 'audio/wav';
+      const bytes = await response.arrayBuffer();
+      if (!bytes.byteLength) {
         throw new Error('Received empty audio from the server');
       }
+      const blob = new Blob([bytes], { type: mimeType });
 
       const url = URL.createObjectURL(blob);
       objectUrlRef.current = url;

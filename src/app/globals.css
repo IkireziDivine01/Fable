@@ -186,6 +186,49 @@ button {
   }
 }
 
+@keyframes kidRise {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-kid-rise {
+  animation: kidRise 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes kidWiggle {
+  0%,
+  100% {
+    transform: rotate(-1.5deg);
+  }
+  50% {
+    transform: rotate(1.5deg);
+  }
+}
+
+.animate-kid-wiggle {
+  animation: kidWiggle 3.2s ease-in-out infinite;
+}
+
+@keyframes kidPulseSoft {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.03);
+  }
+}
+
+.animate-kid-pulse {
+  animation: kidPulseSoft 2.4s ease-in-out infinite;
+}
+
 /* Material symbols fallback */
 .material-symbols-outlined {
   font-feature-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;

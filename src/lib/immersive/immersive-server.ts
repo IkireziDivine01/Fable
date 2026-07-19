@@ -1,4 +1,6 @@
 import { supabaseAdmin } from '../supabase-admin';
+import { normalizeEngagementActivities } from './engagementActivities';
+import { normalizeSceneBrief } from './sceneBrief';
 import { normalizeHotspots, normalizeSceneEvents } from './sceneEvents';
 import { normalizeCharacterAppearance, normalizeSceneSpec } from './sceneSpec';
 import type {
@@ -37,6 +39,12 @@ function parseAnimationData(
   if (!raw || typeof raw !== 'object') return { version: 1 };
   const obj = raw as Record<string, unknown>;
   const sceneSpec = normalizeSceneSpec(obj.sceneSpec, environment);
+  // Legacy rows omit sceneBrief — leave undefined; never invent a default
+  const sceneBrief = normalizeSceneBrief(obj.sceneBrief);
+  const engagementActivities = normalizeEngagementActivities(
+    obj.engagementActivities,
+    sceneBrief
+  );
   return {
     version: Number(obj.version ?? 1),
     useAiVoice: obj.useAiVoice !== undefined ? Boolean(obj.useAiVoice) : undefined,
@@ -44,9 +52,11 @@ function parseAnimationData(
       obj.environmentDescription !== undefined
         ? String(obj.environmentDescription)
         : undefined,
+    ...(sceneBrief ? { sceneBrief } : {}),
     sceneSpec,
     sceneEvents: normalizeSceneEvents(obj.sceneEvents, environment),
     hotspots: normalizeHotspots(obj.hotspots),
+    ...(engagementActivities ? { engagementActivities } : {}),
     sentenceTimings:
       obj.sentenceTimings && typeof obj.sentenceTimings === 'object'
         ? (obj.sentenceTimings as Record<string, MouthSyncTiming[]>)
@@ -91,7 +101,7 @@ export async function saveImmersiveStory(
 ) {
   const { data: story } = await supabaseAdmin
     .from('stories')
-    .select('id')
+    .select('id, environment')
     .eq('id', storyId)
     .eq('household_id', householdId)
     .maybeSingle();
@@ -105,7 +115,13 @@ export async function saveImmersiveStory(
   if (meta.environment) payload.environment = meta.environment;
   if (meta.characters) payload.characters = meta.characters;
   if (meta.isImmersive !== undefined) payload.is_immersive = meta.isImmersive;
-  if (meta.animationData) payload.animation_data = meta.animationData;
+  if (meta.animationData) {
+    const env = (meta.environment ??
+      story.environment ??
+      'village') as EnvironmentType;
+    // Re-normalize on write so sceneBrief (when present) is stored cleanly
+    payload.animation_data = parseAnimationData(meta.animationData, env);
+  }
   if (meta.videoUrl !== undefined) payload.video_url = meta.videoUrl;
 
   const { data, error } = await supabaseAdmin

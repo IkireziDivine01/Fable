@@ -8,7 +8,6 @@ import {
   ChatBubbleLeftRightIcon,
   CheckCircleIcon,
   ClockIcon,
-  LightBulbIcon,
   PlusIcon,
   SparklesIcon,
   UsersIcon,
@@ -22,6 +21,14 @@ interface Story {
   is_immersive?: boolean;
 }
 
+interface LearnerShelfCounts {
+  unread: number;
+  fresh: number;
+  reading: number;
+  completed: number;
+  published: number;
+}
+
 interface LearnerSummary {
   id: string;
   name: string;
@@ -29,6 +36,7 @@ interface LearnerSummary {
   storiesStartedThisWeek: number;
   storiesCompletedTotal?: number;
   storiesInProgress?: number;
+  shelf?: LearnerShelfCounts;
   lastActiveAt: string | null;
   accountStatus?: string;
 }
@@ -39,7 +47,7 @@ interface ReadingActivityItem {
   kidName: string;
   storyId: string | null;
   storyTitle: string;
-  eventType: 'STORY_STARTED' | 'STORY_COMPLETED' | 'QUESTION_ASKED' | 'WARUZIKO_VIEWED';
+  eventType: 'STORY_STARTED' | 'STORY_COMPLETED' | 'QUESTION_ASKED';
   timestamp: string;
 }
 
@@ -49,10 +57,11 @@ interface ActivityData {
   totalReadsThisWeek: number;
   totalStartsThisWeek: number;
   activeLearnersThisWeek: number;
+  shelfTotals?: LearnerShelfCounts;
+  freshPublishedCount?: number;
   dailyCompletions: { date: string; label: string; count: number }[];
   topStories: { storyId: string; title: string; completions: number }[];
   unansweredQuestions?: number;
-  waruzikoViewsThisWeek?: number;
 }
 
 interface KidQuestion {
@@ -150,15 +159,17 @@ function LearnerCards({
     );
   }
 
-  const maxReads = Math.max(1, ...learners.map((l) => l.storiesReadThisWeek));
-
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       {learners.map((learner) => {
         const pending = learner.accountStatus === 'pending';
-        const barWidth = pending
-          ? 0
-          : Math.round((learner.storiesReadThisWeek / maxReads) * 100);
+        const shelf = learner.shelf;
+        const published = shelf?.published ?? 0;
+        const readPct =
+          !pending && published > 0
+            ? Math.round(((shelf?.completed ?? 0) / published) * 100)
+            : 0;
+
         return (
           <div
             key={learner.id}
@@ -178,31 +189,57 @@ function LearnerCards({
                 )}
               </div>
               {!pending && (
-                <p className="shrink-0 font-headline-md text-[#1e1b18]">
-                  {learner.storiesReadThisWeek}
-                  <span className="ml-1 font-label-sm text-[10px] uppercase tracking-widest text-[#857278]">
-                    done
+                <p className="shrink-0 text-right">
+                  <span className="font-headline-md text-[#1e1b18]">
+                    {learner.storiesReadThisWeek}
+                  </span>
+                  <span className="mt-0.5 block font-body-sm text-xs text-[#857278]">
+                    finished this week
                   </span>
                 </p>
               )}
             </div>
 
-            {!pending && (
+            {!pending && shelf && (
               <>
-                <div className="mb-2 h-2 overflow-hidden rounded-full bg-[#e9d7d0]">
-                  <div
-                    className="h-full rounded-full bg-[#520e33] transition-all"
-                    style={{ width: `${barWidth}%` }}
-                  />
+                <div className="mb-3 flex h-2 overflow-hidden rounded-full bg-[#e9d7d0]">
+                  {published > 0 && (
+                    <>
+                      <div
+                        className="bg-[#2d5a3d] transition-all"
+                        style={{ width: `${(shelf.completed / published) * 100}%` }}
+                        title={`${shelf.completed} read`}
+                      />
+                      <div
+                        className="bg-[#FF7956] transition-all"
+                        style={{ width: `${(shelf.reading / published) * 100}%` }}
+                        title={`${shelf.reading} reading`}
+                      />
+                      <div
+                        className="bg-[#520e33]/35 transition-all"
+                        style={{ width: `${(shelf.unread / published) * 100}%` }}
+                        title={`${shelf.unread} unread`}
+                      />
+                    </>
+                  )}
                 </div>
-                <p className="font-body-sm text-sm text-[#524348]">
-                  {learner.storiesReadThisWeek} finished this week
-                  {(learner.storiesInProgress ?? 0) > 0
-                    ? ` · ${learner.storiesInProgress} in progress`
-                    : ''}
-                  {(learner.storiesCompletedTotal ?? 0) > 0
-                    ? ` · ${learner.storiesCompletedTotal} total finished`
-                    : ''}
+                <dl className="grid grid-cols-3 gap-2 text-center">
+                  <div>
+                    <dt className="font-body-sm text-xs text-[#857278]">New</dt>
+                    <dd className="font-headline-md text-lg text-[#520e33]">{shelf.fresh}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-body-sm text-xs text-[#857278]">Unread</dt>
+                    <dd className="font-headline-md text-lg text-[#1e1b18]">{shelf.unread}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-body-sm text-xs text-[#857278]">Reading</dt>
+                    <dd className="font-headline-md text-lg text-[#a7391c]">{shelf.reading}</dd>
+                  </div>
+                </dl>
+                <p className="mt-2 font-body-sm text-sm text-[#524348]">
+                  {shelf.completed} of {published} read
+                  {readPct > 0 ? ` (${readPct}%)` : ''}
                 </p>
               </>
             )}
@@ -381,7 +418,7 @@ export default function ParentDashboard() {
               Welcome back, {firstName}
             </h1>
             <p className="mt-2 font-body-md text-[#524348]">
-              See how your learners are reading this week — manage stories in the library.
+              Track new, unread, and finished stories across your household.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -402,20 +439,26 @@ export default function ParentDashboard() {
           </div>
         </header>
 
-        {/* Analytics summary — finished counts use unique stories (same as kid library) */}
+        {/* Shelf + weekly summary — same progress model as the kid library */}
         <div className="mb-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           {[
             {
+              label: 'New stories',
+              value: loadingActivity
+                ? '—'
+                : (activity?.freshPublishedCount ?? 0),
+            },
+            {
+              label: 'Unread across kids',
+              value: loadingActivity ? '—' : (activity?.shelfTotals?.unread ?? 0),
+            },
+            {
+              label: 'In progress',
+              value: loadingActivity ? '—' : (activity?.shelfTotals?.reading ?? 0),
+            },
+            {
               label: 'Finished this week',
               value: loadingActivity ? '—' : (activity?.totalReadsThisWeek ?? 0),
-            },
-            {
-              label: 'Started this week',
-              value: loadingActivity ? '—' : (activity?.totalStartsThisWeek ?? 0),
-            },
-            {
-              label: 'Active learners',
-              value: loadingActivity ? '—' : (activity?.activeLearnersThisWeek ?? 0),
             },
             {
               label: 'Open questions',
@@ -424,12 +467,8 @@ export default function ParentDashboard() {
                 : (activity?.unansweredQuestions ?? questions.length),
             },
             {
-              label: 'Waruziko views',
-              value: loadingActivity ? '—' : (activity?.waruzikoViewsThisWeek ?? 0),
-            },
-            {
-              label: 'Stories in library',
-              value: loadingStories ? '—' : stories.length,
+              label: 'Published stories',
+              value: loadingStories ? '—' : publishedCount,
               href: '/parent/library',
             },
           ].map((stat) => {
@@ -469,7 +508,7 @@ export default function ParentDashboard() {
                     Learners
                   </p>
                   <h2 className="mt-1 font-headline-md text-headline-md text-[#1e1b18]">
-                    Weekly reading
+                    Each learner&apos;s shelf
                   </h2>
                 </div>
                 <Link
@@ -518,14 +557,7 @@ export default function ParentDashboard() {
                   {recentEvents.slice(0, 8).map((item) => {
                     const done = item.eventType === 'STORY_COMPLETED';
                     const asked = item.eventType === 'QUESTION_ASKED';
-                    const waruziko = item.eventType === 'WARUZIKO_VIEWED';
-                    const verb = done
-                      ? 'finished'
-                      : asked
-                        ? ''
-                        : waruziko
-                          ? 'read'
-                          : 'started';
+                    const verb = done ? 'finished' : asked ? '' : 'started';
                     return (
                       <li
                         key={item.id}
@@ -535,8 +567,6 @@ export default function ParentDashboard() {
                           <CheckCircleIcon className="mt-0.5 h-5 w-5 shrink-0 text-[#2d5a3d]" />
                         ) : asked ? (
                           <ChatBubbleLeftRightIcon className="mt-0.5 h-5 w-5 shrink-0 text-[#520e33]" />
-                        ) : waruziko ? (
-                          <LightBulbIcon className="mt-0.5 h-5 w-5 shrink-0 text-[#C4A574]" />
                         ) : (
                           <BookOpenIcon className="mt-0.5 h-5 w-5 shrink-0 text-[#FF7956]" />
                         )}

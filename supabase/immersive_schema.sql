@@ -13,6 +13,9 @@ ALTER TABLE stories
 ALTER TABLE stories
   ADD COLUMN IF NOT EXISTS is_immersive BOOLEAN DEFAULT false;
 
+-- Per-story immersive payload (sceneSpec, sceneEvents, hotspots, sceneBrief,
+-- engagementActivities, …). sceneBrief / engagementActivities are optional;
+-- omit on legacy rows (no default brief or activities).
 ALTER TABLE stories
   ADD COLUMN IF NOT EXISTS animation_data JSONB DEFAULT '{}'::jsonb;
 

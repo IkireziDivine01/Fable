@@ -273,6 +273,9 @@ export async function updateStoryDraft(
 
 export type StoryReadStatus = 'new' | 'reading' | 'completed';
 
+/** Stories published within this window get a “just in” mark when still unread. */
+const FRESH_STORY_DAYS = 14;
+
 export interface KidLibraryStory {
   id: string;
   title: string;
@@ -282,32 +285,158 @@ export interface KidLibraryStory {
   created_at: string;
   themes?: string[] | null;
   readStatus: StoryReadStatus;
+  /** Unread and published within the last FRESH_STORY_DAYS. */
+  isFresh: boolean;
   startedAt: string | null;
   completedAt: string | null;
+}
+
+function isFreshPublished(createdAt: string, now = Date.now()): boolean {
+  const created = new Date(createdAt).getTime();
+  if (Number.isNaN(created)) return false;
+  return now - created <= FRESH_STORY_DAYS * 24 * 60 * 60 * 1000;
+}
+
+function readStatusFromMaps(
+  storyId: string,
+  startedAt: Map<string, string>,
+  completedAt: Map<string, string>
+): StoryReadStatus {
+  if (completedAt.has(storyId)) return 'completed';
+  if (startedAt.has(storyId)) return 'reading';
+  return 'new';
+}
+
+function collectProgressMaps(
+  logs: { story_id?: unknown; event_type?: unknown; created_at?: unknown }[]
+) {
+  const startedAt = new Map<string, string>();
+  const completedAt = new Map<string, string>();
+
+  for (const row of logs) {
+    if (!row.story_id) continue;
+    const storyId = String(row.story_id);
+    const ts = String(row.created_at ?? '');
+    if (row.event_type === 'STORY_COMPLETED' && !completedAt.has(storyId)) {
+      completedAt.set(storyId, ts);
+    }
+    if (row.event_type === 'STORY_STARTED' && !startedAt.has(storyId)) {
+      startedAt.set(storyId, ts);
+    }
+  }
+
+  return { startedAt, completedAt };
 }
 
 export async function logStoryActivity(input: {
   householdId: string;
   actorId: string;
   storyId: string;
-  eventType: 'STORY_STARTED' | 'STORY_COMPLETED';
+  eventType:
+    | 'STORY_STARTED'
+    | 'STORY_COMPLETED'
+    | 'ACTIVITY_STARTED'
+    | 'ACTIVITY_COMPLETED';
   metadata?: Record<string, unknown>;
 }) {
-  const { error } = await supabaseAdmin.from('interaction_logs').insert([
-    {
-      household_id: input.householdId,
-      actor_id: input.actorId,
-      story_id: input.storyId,
-      event_type: input.eventType,
-      metadata: input.metadata ?? {},
-      timestamp: new Date().toISOString(),
-    },
-  ]);
+  const baseRow = {
+    id: crypto.randomUUID(),
+    household_id: input.householdId,
+    actor_id: input.actorId,
+    story_id: input.storyId,
+    event_type: input.eventType,
+    metadata: input.metadata ?? {},
+    synced_to_cloud: false,
+    created_at: new Date().toISOString(),
+  };
+
+  let { error } = await supabaseAdmin.from('interaction_logs').insert([baseRow]);
+
+  // Older DBs may lack optional columns — strip and retry.
+  if (error?.message?.includes('created_at') || error?.message?.includes('synced_to_cloud')) {
+    const { created_at: _c, synced_to_cloud: _s, ...withoutOptional } = baseRow;
+    const retry = await supabaseAdmin.from('interaction_logs').insert([withoutOptional]);
+    if (!retry.error) return;
+    error = retry.error;
+  }
 
   if (error) {
-    // Table may not exist yet — log silently in dev
-    console.warn('Could not log activity:', error.message);
+    const hint = error.message.includes('actor_id_fkey')
+      ? ' Re-run supabase/fix_interaction_logs_actor_fk.sql (actor_id must reference user_profiles).'
+      : error.message.includes('interaction_logs') || error.message.includes('created_at')
+        ? ' Re-run supabase/fix_interaction_logs_actor_fk.sql.'
+        : '';
+    throw new Error(`${error.message}.${hint}`);
   }
+}
+
+/** Current shelf status for one kid + story (new / reading / completed). */
+export async function getKidStoryReadStatus(
+  householdId: string,
+  kidId: string,
+  storyId: string
+): Promise<StoryReadStatus> {
+  const { data, error } = await supabaseAdmin
+    .from('interaction_logs')
+    .select('event_type')
+    .eq('household_id', householdId)
+    .eq('actor_id', kidId)
+    .eq('story_id', storyId)
+    .in('event_type', ['STORY_STARTED', 'STORY_COMPLETED'])
+    .limit(40);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const events = new Set((data ?? []).map((row) => String(row.event_type)));
+  if (events.has('STORY_COMPLETED')) return 'completed';
+  if (events.has('STORY_STARTED')) return 'reading';
+  return 'new';
+}
+
+/**
+ * Persist reading events for the parent dashboard + kid shelf.
+ * STORY_STARTED is idempotent (first open only). Completions always log so re-reads count.
+ */
+export async function recordKidReadingEvent(input: {
+  householdId: string;
+  actorId: string;
+  storyId: string;
+  eventType:
+    | 'STORY_STARTED'
+    | 'STORY_COMPLETED'
+    | 'ACTIVITY_STARTED'
+    | 'ACTIVITY_COMPLETED';
+  metadata?: Record<string, unknown>;
+}): Promise<{ logged: boolean; readStatus: StoryReadStatus }> {
+  if (input.eventType === 'ACTIVITY_STARTED' || input.eventType === 'ACTIVITY_COMPLETED') {
+    await logStoryActivity(input);
+    const readStatus = await getKidStoryReadStatus(
+      input.householdId,
+      input.actorId,
+      input.storyId
+    );
+    return { logged: true, readStatus };
+  }
+
+  const current = await getKidStoryReadStatus(
+    input.householdId,
+    input.actorId,
+    input.storyId
+  );
+
+  if (input.eventType === 'STORY_STARTED') {
+    if (current !== 'new') {
+      return { logged: false, readStatus: current };
+    }
+    await logStoryActivity(input);
+    return { logged: true, readStatus: 'reading' };
+  }
+
+  // STORY_COMPLETED — always record (re-reads still matter for weekly activity)
+  await logStoryActivity(input);
+  return { logged: true, readStatus: 'completed' };
 }
 
 /** Per-kid story shelf with new / reading / completed from the same logs parents see. */
@@ -319,39 +448,28 @@ export async function getKidLibraryWithProgress(
 
   const { data: logs, error } = await supabaseAdmin
     .from('interaction_logs')
-    .select('story_id, event_type, timestamp')
+    .select('story_id, event_type, created_at')
     .eq('household_id', householdId)
     .eq('actor_id', kidId)
     .in('event_type', ['STORY_STARTED', 'STORY_COMPLETED'])
-    .order('timestamp', { ascending: false });
+    .order('created_at', { ascending: false });
 
   if (error) {
-    console.warn('Could not load kid reading progress:', error.message);
+    throw new Error(
+      error.message.includes('interaction_logs') || error.message.includes('created_at')
+        ? `${error.message}. Re-run supabase/stories_schema.sql to add interaction_logs.created_at.`
+        : error.message
+    );
   }
 
-  const startedAt = new Map<string, string>();
-  const completedAt = new Map<string, string>();
+  const { startedAt, completedAt } = collectProgressMaps(logs ?? []);
+  const now = Date.now();
 
-  for (const row of logs ?? []) {
-    if (!row.story_id) continue;
-    const storyId = String(row.story_id);
-    const ts = String(row.timestamp);
-    if (row.event_type === 'STORY_COMPLETED' && !completedAt.has(storyId)) {
-      completedAt.set(storyId, ts);
-    }
-    if (row.event_type === 'STORY_STARTED' && !startedAt.has(storyId)) {
-      startedAt.set(storyId, ts);
-    }
-  }
-
-  return stories.map((story) => {
+  const shelf = stories.map((story) => {
     const row = story as Record<string, unknown>;
     const id = String(row.id);
-    const doneAt = completedAt.get(id) ?? null;
-    const begunAt = startedAt.get(id) ?? null;
-    let readStatus: StoryReadStatus = 'new';
-    if (doneAt) readStatus = 'completed';
-    else if (begunAt) readStatus = 'reading';
+    const createdAt = String(row.created_at);
+    const readStatus = readStatusFromMaps(id, startedAt, completedAt);
 
     return {
       id,
@@ -359,12 +477,27 @@ export async function getKidLibraryWithProgress(
       status: String(row.status),
       generation_type: (row.generation_type as string) ?? null,
       is_immersive: row.is_immersive != null ? Boolean(row.is_immersive) : null,
-      created_at: String(row.created_at),
+      created_at: createdAt,
       themes: Array.isArray(row.themes) ? (row.themes as string[]) : null,
       readStatus,
-      startedAt: begunAt,
-      completedAt: doneAt,
+      isFresh: readStatus === 'new' && isFreshPublished(createdAt, now),
+      startedAt: startedAt.get(id) ?? null,
+      completedAt: completedAt.get(id) ?? null,
     };
+  });
+
+  // Reading first, then fresh new, then other unread, then finished
+  const rank = (s: KidLibraryStory) => {
+    if (s.readStatus === 'reading') return 0;
+    if (s.readStatus === 'new' && s.isFresh) return 1;
+    if (s.readStatus === 'new') return 2;
+    return 3;
+  };
+
+  return shelf.sort((a, b) => {
+    const diff = rank(a) - rank(b);
+    if (diff !== 0) return diff;
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
   });
 }
 
@@ -374,8 +507,18 @@ export interface ReadingActivityItem {
   kidName: string;
   storyId: string | null;
   storyTitle: string;
-  eventType: 'STORY_STARTED' | 'STORY_COMPLETED' | 'QUESTION_ASKED' | 'WARUZIKO_VIEWED';
+  eventType: 'STORY_STARTED' | 'STORY_COMPLETED' | 'QUESTION_ASKED';
   timestamp: string;
+}
+
+export interface LearnerShelfCounts {
+  /** Never opened (includes fresh “new” stories). */
+  unread: number;
+  /** Unread and published in the last FRESH_STORY_DAYS. */
+  fresh: number;
+  reading: number;
+  completed: number;
+  published: number;
 }
 
 export interface HouseholdReadingSummary {
@@ -386,6 +529,7 @@ export interface HouseholdReadingSummary {
     storiesStartedThisWeek: number;
     storiesCompletedTotal: number;
     storiesInProgress: number;
+    shelf: LearnerShelfCounts;
     lastActiveAt: string | null;
     accountStatus?: string;
   }[];
@@ -393,10 +537,13 @@ export interface HouseholdReadingSummary {
   totalReadsThisWeek: number;
   totalStartsThisWeek: number;
   activeLearnersThisWeek: number;
+  /** Sum of each learner’s shelf (same story can count once per learner). */
+  shelfTotals: LearnerShelfCounts;
+  /** Published in the last FRESH_STORY_DAYS (unique stories). */
+  freshPublishedCount: number;
   dailyCompletions: { date: string; label: string; count: number }[];
   topStories: { storyId: string; title: string; completions: number }[];
   unansweredQuestions: number;
-  waruzikoViewsThisWeek: number;
 }
 
 function dayKey(date: Date): string {
@@ -420,6 +567,29 @@ function uniqueStoryIds(
   return ids;
 }
 
+function emptyShelfCounts(published = 0): LearnerShelfCounts {
+  return { unread: 0, fresh: 0, reading: 0, completed: 0, published };
+}
+
+function shelfCountsForKid(
+  publishedStories: { id: string; created_at: string }[],
+  startedAt: Map<string, string>,
+  completedAt: Map<string, string>,
+  now = Date.now()
+): LearnerShelfCounts {
+  const shelf = emptyShelfCounts(publishedStories.length);
+  for (const story of publishedStories) {
+    const status = readStatusFromMaps(story.id, startedAt, completedAt);
+    if (status === 'completed') shelf.completed += 1;
+    else if (status === 'reading') shelf.reading += 1;
+    else {
+      shelf.unread += 1;
+      if (isFreshPublished(story.created_at, now)) shelf.fresh += 1;
+    }
+  }
+  return shelf;
+}
+
 export async function getHouseholdReadingActivity(
   householdId: string
 ): Promise<HouseholdReadingSummary> {
@@ -427,60 +597,74 @@ export async function getHouseholdReadingActivity(
   weekStart.setHours(0, 0, 0, 0);
   weekStart.setDate(weekStart.getDate() - 6);
 
-  const householdLearners = await listHouseholdLearners(householdId);
+  const [householdLearners, publishedRows] = await Promise.all([
+    listHouseholdLearners(householdId),
+    listStoriesForHousehold(householdId, { publishedOnly: true }),
+  ]);
 
-  const { data: logs, error: logsError } = await supabaseAdmin
+  const publishedStories = publishedRows.map((row) => {
+    const r = row as Record<string, unknown>;
+    return { id: String(r.id), created_at: String(r.created_at), title: String(r.title) };
+  });
+  const publishedIds = new Set(publishedStories.map((s) => s.id));
+
+  // Full reading history for accurate shelf + weekly stats (not capped with questions).
+  const { data: readingLogs, error: readingError } = await supabaseAdmin
     .from('interaction_logs')
-    .select('id, actor_id, story_id, event_type, timestamp')
+    .select('id, actor_id, story_id, event_type, created_at')
     .eq('household_id', householdId)
-    .in('event_type', [
-      'STORY_STARTED',
-      'STORY_COMPLETED',
-      'QUESTION_ASKED',
-      'WARUZIKO_VIEWED',
-    ])
-    .order('timestamp', { ascending: false })
-    .limit(300);
+    .in('event_type', ['STORY_STARTED', 'STORY_COMPLETED'])
+    .order('created_at', { ascending: false });
 
-  if (logsError) {
-    console.warn('Could not load reading activity:', logsError.message);
+  if (readingError) {
+    throw new Error(
+      readingError.message.includes('interaction_logs') ||
+        readingError.message.includes('created_at')
+        ? `${readingError.message}. Re-run supabase/stories_schema.sql to add interaction_logs.created_at.`
+        : readingError.message
+    );
   }
 
-  const rows = logs ?? [];
-  const readingRows = rows.filter(
-    (r) => r.event_type === 'STORY_STARTED' || r.event_type === 'STORY_COMPLETED'
-  );
-  const weekRows = readingRows.filter((r) => new Date(String(r.timestamp)) >= weekStart);
+  const { data: feedLogs, error: feedError } = await supabaseAdmin
+    .from('interaction_logs')
+    .select('id, actor_id, story_id, event_type, created_at')
+    .eq('household_id', householdId)
+    .in('event_type', ['STORY_STARTED', 'STORY_COMPLETED', 'QUESTION_ASKED'])
+    .order('created_at', { ascending: false })
+    .limit(40);
+
+  if (feedError) {
+    console.warn('Could not load activity feed:', feedError.message);
+  }
+
+  const readingRows = readingLogs ?? [];
+  const feedRows = feedLogs ?? [];
+  const weekRows = readingRows.filter((r) => new Date(String(r.created_at)) >= weekStart);
 
   let unansweredQuestions = 0;
-  let waruzikoViewsThisWeek = 0;
   try {
-    const [qRes, wRes] = await Promise.all([
-      supabaseAdmin
-        .from('kid_questions')
-        .select('id', { count: 'exact', head: true })
-        .eq('household_id', householdId)
-        .is('answer_text', null),
-      supabaseAdmin
-        .from('waruziko_views')
-        .select('id', { count: 'exact', head: true })
-        .eq('household_id', householdId)
-        .gte('viewed_at', weekStart.toISOString()),
-    ]);
+    const qRes = await supabaseAdmin
+      .from('kid_questions')
+      .select('id', { count: 'exact', head: true })
+      .eq('household_id', householdId)
+      .is('answer_text', null);
     if (!qRes.error) unansweredQuestions = qRes.count ?? 0;
-    if (!wRes.error) waruzikoViewsThisWeek = wRes.count ?? 0;
   } catch {
-    // Tables may not exist until waruziko_schema.sql is applied
+    // Tables may not exist until kid_questions_schema.sql is applied
   }
 
   const actorIds = [
     ...new Set([
       ...householdLearners.map((kid) => String((kid as Record<string, unknown>).id)),
-      ...rows.map((r) => String(r.actor_id)),
+      ...feedRows.map((r) => String(r.actor_id)),
+      ...readingRows.map((r) => String(r.actor_id)),
     ]),
   ];
   const storyIds = [
-    ...new Set(rows.filter((r) => r.story_id).map((r) => String(r.story_id))),
+    ...new Set([
+      ...publishedStories.map((s) => s.id),
+      ...feedRows.filter((r) => r.story_id).map((r) => String(r.story_id)),
+    ]),
   ];
 
   const [{ data: profiles }, { data: stories }] = await Promise.all([
@@ -496,35 +680,75 @@ export async function getHouseholdReadingActivity(
     (profiles ?? []).map((p) => [String(p.id), { name: String(p.name ?? 'Learner'), role: String(p.role) }])
   );
   const storyMap = new Map((stories ?? []).map((s) => [String(s.id), String(s.title)]));
+  for (const s of publishedStories) {
+    if (!storyMap.has(s.id)) storyMap.set(s.id, s.title);
+  }
+
+  const now = Date.now();
+  // Per-kid maps from full history (oldest→newest so first timestamps stick)
+  const progressByKid = new Map<string, ReturnType<typeof collectProgressMaps>>();
+  const chronological = [...readingRows].reverse();
+  for (const row of chronological) {
+    if (!row.story_id) continue;
+    const kidId = String(row.actor_id);
+    const storyId = String(row.story_id);
+    if (!publishedIds.has(storyId)) continue;
+    let maps = progressByKid.get(kidId);
+    if (!maps) {
+      maps = { startedAt: new Map(), completedAt: new Map() };
+      progressByKid.set(kidId, maps);
+    }
+    const ts = String(row.created_at);
+    if (row.event_type === 'STORY_STARTED' && !maps.startedAt.has(storyId)) {
+      maps.startedAt.set(storyId, ts);
+    }
+    if (row.event_type === 'STORY_COMPLETED' && !maps.completedAt.has(storyId)) {
+      maps.completedAt.set(storyId, ts);
+    }
+  }
 
   const learners = householdLearners.map((kid) => {
     const row = kid as Record<string, unknown>;
     const kidId = String(row.id);
     const completedThisWeek = uniqueStoryIds(weekRows, 'STORY_COMPLETED', kidId).size;
     const startedThisWeek = uniqueStoryIds(weekRows, 'STORY_STARTED', kidId).size;
-    const completedTotal = uniqueStoryIds(readingRows, 'STORY_COMPLETED', kidId);
-    const startedTotal = uniqueStoryIds(readingRows, 'STORY_STARTED', kidId);
-    const inProgress = [...startedTotal].filter((id) => !completedTotal.has(id)).length;
-    const lastEvent = rows.find((r) => String(r.actor_id) === kidId);
+    const maps = progressByKid.get(kidId) ?? { startedAt: new Map(), completedAt: new Map() };
+    const shelf = shelfCountsForKid(publishedStories, maps.startedAt, maps.completedAt, now);
+    const lastEvent =
+      feedRows.find((r) => String(r.actor_id) === kidId) ??
+      readingRows.find((r) => String(r.actor_id) === kidId);
     return {
       id: kidId,
       name: String(row.name ?? 'Learner'),
       storiesReadThisWeek: completedThisWeek,
       storiesStartedThisWeek: startedThisWeek,
-      storiesCompletedTotal: completedTotal.size,
-      storiesInProgress: inProgress,
-      lastActiveAt: lastEvent ? String(lastEvent.timestamp) : null,
+      storiesCompletedTotal: shelf.completed,
+      storiesInProgress: shelf.reading,
+      shelf,
+      lastActiveAt: lastEvent ? String(lastEvent.created_at) : null,
       accountStatus: row.account_status ? String(row.account_status) : 'active',
     };
   });
 
-  const recentActivity: ReadingActivityItem[] = rows.slice(0, 24).map((row) => {
+  const activeLearners = learners.filter((l) => l.accountStatus !== 'pending');
+  const shelfTotals = activeLearners.reduce<LearnerShelfCounts>(
+    (acc, learner) => ({
+      unread: acc.unread + learner.shelf.unread,
+      fresh: acc.fresh + learner.shelf.fresh,
+      reading: acc.reading + learner.shelf.reading,
+      completed: acc.completed + learner.shelf.completed,
+      published: Math.max(acc.published, learner.shelf.published),
+    }),
+    emptyShelfCounts(publishedStories.length)
+  );
+  shelfTotals.published = publishedStories.length;
+
+  const recentActivity: ReadingActivityItem[] = feedRows.slice(0, 24).map((row) => {
     const actorId = String(row.actor_id);
     const profile = profileMap.get(actorId);
     const storyId = row.story_id ? String(row.story_id) : null;
     const eventType = String(row.event_type) as ReadingActivityItem['eventType'];
     let storyTitle = storyId ? (storyMap.get(storyId) ?? 'Untitled story') : 'Untitled story';
-    if (eventType === 'WARUZIKO_VIEWED') storyTitle = 'Waruziko — fact of the day';
     if (eventType === 'QUESTION_ASKED') {
       storyTitle = storyId
         ? `Asked about “${storyMap.get(storyId) ?? 'a story'}”`
@@ -537,7 +761,7 @@ export async function getHouseholdReadingActivity(
       storyId,
       storyTitle,
       eventType,
-      timestamp: String(row.timestamp),
+      timestamp: String(row.created_at),
     };
   });
 
@@ -564,7 +788,7 @@ export async function getHouseholdReadingActivity(
     const dayKeys = new Set<string>();
     for (const r of weekRows) {
       if (r.event_type !== 'STORY_COMPLETED' || !r.story_id) continue;
-      if (dayKey(new Date(String(r.timestamp))) !== key) continue;
+      if (dayKey(new Date(String(r.created_at))) !== key) continue;
       dayKeys.add(`${r.actor_id}:${r.story_id}`);
     }
     return {
@@ -591,15 +815,20 @@ export async function getHouseholdReadingActivity(
     .sort((a, b) => b.completions - a.completions)
     .slice(0, 5);
 
+  const freshPublishedCount = publishedStories.filter((s) =>
+    isFreshPublished(s.created_at, now)
+  ).length;
+
   return {
     learners,
     recentActivity,
     totalReadsThisWeek,
     totalStartsThisWeek,
     activeLearnersThisWeek,
+    shelfTotals,
+    freshPublishedCount,
     dailyCompletions,
     topStories,
     unansweredQuestions,
-    waruzikoViewsThisWeek,
   };
 }

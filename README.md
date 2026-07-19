@@ -34,7 +34,6 @@ Built for families first—with parental consent, invitation-only onboarding for
 - **Sentence-level audio** — Elders record narration per sentence; audio lives in Supabase Storage
 - **Bilingual content** — English + Kinyarwanda sentence fields, themes, and immersive hotspot notes
 - **Kid-friendly reader** — Gesture-oriented reading experience with audio playback
-- **Waruziko** — Daily Rwandan culture facts for learners (Kinyarwanda + English)
 - **Mid-story questions** — Learners can ask family a question during a story; parents answer from the dashboard
 - **Synced reading shelf** — Kid library shows new / reading / finished stories from the same activity logs as the parent dashboard
 
@@ -135,7 +134,7 @@ Run the SQL scripts in your Supabase SQL Editor, in order:
 2. [`supabase/auth_schema.sql`](./supabase/auth_schema.sql) — account status, role normalization
 3. [`supabase/stories_schema.sql`](./supabase/stories_schema.sql) — stories, sentences, audio, interaction logs
 4. [`supabase/immersive_schema.sql`](./supabase/immersive_schema.sql) — 3D environments, characters, animation data
-5. [`supabase/waruziko_schema.sql`](./supabase/waruziko_schema.sql) — Waruziko facts, views, and mid-story kid questions
+5. [`supabase/kid_questions_schema.sql`](./supabase/kid_questions_schema.sql) — Mid-story kid questions
 
 Also apply any files under [`supabase/migrations/`](./supabase/migrations/) if present.
 
@@ -170,7 +169,6 @@ Open [http://localhost:3000](http://localhost:3000).
 | `/elder/create-story` | Elder story studio |
 | `/elder/story/[id]/edit-sentences` | Sentence editing & audio recording |
 | `/kid/library` | Learner shelf (new / reading / finished) |
-| `/kid/waruziko` | Fact of the day (Waruziko) |
 | `/kid/story/[id]` | Learner immersive story reader |
 | `/*/story/[id]/immersive` | Immersive 3D playback (parent / kid / elder) |
 

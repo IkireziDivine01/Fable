@@ -78,7 +78,7 @@ export async function createKidQuestion(input: {
         questionId: data.id,
         sentenceOrder: input.sentenceOrder ?? null,
       },
-      timestamp: now,
+      created_at: now,
     },
   ]);
 

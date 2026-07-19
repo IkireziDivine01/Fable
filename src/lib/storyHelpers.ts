@@ -1,4 +1,6 @@
 import { SYSTEM_THEME_NAMES, type SystemThemeName } from './themes';
+import { normalizeEngagementActivities } from './immersive/engagementActivities';
+import { normalizeSceneBrief } from './immersive/sceneBrief';
 import {
   normalizeHotspots,
   normalizeSceneEvents,
@@ -9,7 +11,9 @@ import {
 } from './immersive/sceneSpec';
 import type {
   CharacterType,
+  EngagementActivity,
   EnvironmentType,
+  SceneBrief,
   SceneEvent,
   StoryCharacterSlot,
   StoryHotspot,
@@ -49,9 +53,12 @@ export interface GeneratedStoryPayload {
   sentences: StorySentenceInput[];
   environment?: EnvironmentType;
   environmentDescription?: string;
+  /** Normalized creative direction; omit when Claude/legacy payload has none */
+  sceneBrief?: SceneBrief;
   sceneSpec?: StorySceneSpec;
   sceneEvents?: Record<string, SceneEvent>;
   hotspots?: StoryHotspot[];
+  engagementActivities?: EngagementActivity[];
   characters?: StoryCharacterSlot[];
 }
 
@@ -177,6 +184,9 @@ export function validateGeneratedStory(data: unknown): GeneratedStoryPayload {
     ? String(obj.environmentDescription).trim()
     : undefined;
 
+  // Optional — legacy / incomplete payloads omit this; never invent a default brief
+  const sceneBrief = normalizeSceneBrief(obj.sceneBrief);
+
   const sceneSpec = environment
     ? normalizeSceneSpec(obj.sceneSpec, environment)
     : undefined;
@@ -185,6 +195,11 @@ export function validateGeneratedStory(data: unknown): GeneratedStoryPayload {
     ? normalizeSceneEvents(obj.sceneEvents, environment)
     : undefined;
   const hotspots = normalizeHotspots(obj.hotspots);
+  const engagementActivities = normalizeEngagementActivities(
+    obj.engagementActivities,
+    sceneBrief,
+    { sentenceCount: sentences.length }
+  );
 
   let characters: StoryCharacterSlot[] | undefined;
   if (Array.isArray(obj.characters) && obj.characters.length > 0) {
@@ -218,9 +233,11 @@ export function validateGeneratedStory(data: unknown): GeneratedStoryPayload {
     sentences,
     environment,
     environmentDescription,
+    ...(sceneBrief ? { sceneBrief } : {}),
     sceneSpec,
     sceneEvents,
     hotspots,
+    ...(engagementActivities ? { engagementActivities } : {}),
     characters,
   };
 }
