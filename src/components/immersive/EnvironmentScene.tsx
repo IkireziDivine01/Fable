@@ -442,7 +442,13 @@ export default function EnvironmentScene() {
             type={obj.type}
             position={obj.position}
             scale={obj.scale}
-            accentColor={preset.accentColor ?? '#520e33'}
+            accentColor={
+              highlighted && engagementMode === 'hunt'
+                ? '#E8B84A'
+                : highlighted && engagementMode === 'vocab'
+                  ? '#E8836B'
+                  : (preset.accentColor ?? '#520e33')
+            }
             animate={animateProps}
             interactive={interactive}
             highlighted={highlighted}

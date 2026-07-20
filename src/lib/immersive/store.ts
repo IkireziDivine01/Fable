@@ -69,6 +69,8 @@ interface ImmersiveStore {
   cameraZoom: number;
   worldPreviewActive: boolean;
   ambientMuted: boolean;
+  /** Hide 3D speech bubbles / nameplates (predict, pack, etc.) */
+  sceneChromeHidden: boolean;
   /** off = free explore hotspots; hunt/vocab = gated prop taps */
   engagementMode: EngagementSceneMode;
   /** Prop types currently interactive in hunt/vocab mode */
@@ -124,6 +126,7 @@ interface ImmersiveStore {
   setOnWordSparkOpen: (handler: (() => void) | null) => void;
   setWordSparkVocabHints: (pairs: VocabMatchPair[]) => void;
   setAmbientMuted: (muted: boolean) => void;
+  setSceneChromeHidden: (hidden: boolean) => void;
   setEngagementMode: (mode: EngagementSceneMode) => void;
   setEngagementTargetPropTypes: (types: string[]) => void;
   setFoundPropTypes: (types: string[]) => void;
@@ -189,6 +192,7 @@ export const useImmersiveStore = create<ImmersiveStore>((set) => ({
   cameraZoom: CAMERA_ZOOM_DEFAULT,
   worldPreviewActive: false,
   ambientMuted: false,
+  sceneChromeHidden: false,
   engagementMode: 'off',
   engagementTargetPropTypes: [],
   foundPropTypes: [],
@@ -332,6 +336,7 @@ export const useImmersiveStore = create<ImmersiveStore>((set) => ({
   setOnWordSparkOpen: (handler) => set({ onWordSparkOpen: handler }),
   setWordSparkVocabHints: (pairs) => set({ wordSparkVocabHints: pairs }),
   setAmbientMuted: (muted) => set({ ambientMuted: muted }),
+  setSceneChromeHidden: (hidden) => set({ sceneChromeHidden: hidden }),
   setEngagementMode: (mode) => set({ engagementMode: mode }),
   setEngagementTargetPropTypes: (types) => set({ engagementTargetPropTypes: types }),
   setFoundPropTypes: (types) => set({ foundPropTypes: types }),
@@ -358,6 +363,7 @@ export const useImmersiveStore = create<ImmersiveStore>((set) => ({
       onEngagementPropSelect: null,
       activeHotspotId: null,
       activeWordSpark: null,
+      sceneChromeHidden: false,
     }),
   reset: () =>
     set({
@@ -387,6 +393,7 @@ export const useImmersiveStore = create<ImmersiveStore>((set) => ({
       cameraZoom: CAMERA_ZOOM_DEFAULT,
       worldPreviewActive: false,
       ambientMuted: false,
+      sceneChromeHidden: false,
       engagementMode: 'off',
       engagementTargetPropTypes: [],
       foundPropTypes: [],

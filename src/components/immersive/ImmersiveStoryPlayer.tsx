@@ -12,6 +12,7 @@ import {
 } from '@/lib/aiVoice';
 import { createAmbientSoundscape } from '@/lib/immersive/ambientSound';
 import {
+  ensureEngagementActivities,
   getPostStoryActivities,
   getPredictNextActivity,
 } from '@/lib/immersive/engagementActivities';
@@ -40,6 +41,7 @@ type PostStoryActivity = TreasureHuntActivity | VocabMatchActivity | SequenceAct
 import type { KidSentence } from '@/components/story/KidStoryReader';
 import AskQuestionSheet from '@/components/kid/AskQuestionSheet';
 import StoryRecommendations from '@/components/story/StoryRecommendations';
+import KezaMascot from '@/components/immersive/KezaMascot';
 import { resolveActiveCharacterIndex } from '@/lib/immersive/speaker';
 import {
   ActivityChooser,
@@ -109,6 +111,7 @@ export default function ImmersiveStoryPlayer({
   const adjustCameraZoom = useImmersiveStore((s) => s.adjustCameraZoom);
   const ambientMuted = useImmersiveStore((s) => s.ambientMuted);
   const setAmbientMuted = useImmersiveStore((s) => s.setAmbientMuted);
+  const setSceneChromeHidden = useImmersiveStore((s) => s.setSceneChromeHidden);
   const setEngagementMode = useImmersiveStore((s) => s.setEngagementMode);
   const setEngagementTargetPropTypes = useImmersiveStore(
     (s) => s.setEngagementTargetPropTypes
@@ -149,6 +152,9 @@ export default function ImmersiveStoryPlayer({
   /** Session cache for on-demand Kinyarwanda when sentences lack kinyarwanda_text */
   const [rwOverrides, setRwOverrides] = useState<Record<string, string>>({});
   const [rwTranslating, setRwTranslating] = useState(false);
+  /** Session-local WordSpark count for done-screen recap */
+  const [wordsSparked, setWordsSparked] = useState(0);
+  const [lastGameMessage, setLastGameMessage] = useState<string | null>(null);
   const completionLoggedRef = useRef(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -165,6 +171,10 @@ export default function ImmersiveStoryPlayer({
   const lipSyncTimingsRef = useRef<ReturnType<typeof buildMouthSyncTimings>>([]);
   const ambientRef = useRef<ReturnType<typeof createAmbientSoundscape> | null>(null);
   const predictShownRef = useRef(false);
+  /** Blocks story TTS auto-advance while Keza's predict overlay owns audio */
+  const storyAdvanceBlockedRef = useRef(false);
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
 
   const slots =
     characters.length > 0
@@ -176,13 +186,25 @@ export default function ImmersiveStoryPlayer({
     return deriveSceneEventsFromSentences(sentences, environment);
   }, [environment, sceneEvents, sentences]);
 
+  /** Legacy stories without stored packs still get predict + post games */
+  const resolvedActivities = useMemo(
+    () =>
+      ensureEngagementActivities(engagementActivities, {
+        sceneBrief,
+        sceneSpec,
+        environment,
+        sentences,
+      }) ?? null,
+    [engagementActivities, environment, sceneBrief, sceneSpec, sentences]
+  );
+
   const predictActivity = useMemo(
-    () => getPredictNextActivity(engagementActivities),
-    [engagementActivities]
+    () => getPredictNextActivity(resolvedActivities),
+    [resolvedActivities]
   );
   /** Trim to short kid-friendly lengths so games stay snappy */
   const postActivities = useMemo((): PostStoryActivity[] => {
-    return getPostStoryActivities(engagementActivities).map((activity) => {
+    return getPostStoryActivities(resolvedActivities).map((activity) => {
       if (activity.type === 'treasure_hunt') {
         return { ...activity, targets: activity.targets.slice(0, 3) };
       }
@@ -191,7 +213,7 @@ export default function ImmersiveStoryPlayer({
       }
       return activity;
     });
-  }, [engagementActivities]);
+  }, [resolvedActivities]);
 
   const vocabHints = useMemo(
     () =>
@@ -390,8 +412,8 @@ export default function ImmersiveStoryPlayer({
 
   const advanceSentence = useCallback(() => {
     if (advancingRef.current || phase.kind === 'predict') return;
+    if (storyAdvanceBlockedRef.current) return;
     advancingRef.current = true;
-    cleanupPlayback();
 
     // About to leave penultimate sentence → interrupt with predict_next
     if (
@@ -401,12 +423,17 @@ export default function ImmersiveStoryPlayer({
       sentenceIndex === total - 2 &&
       total >= 4
     ) {
+      // Stop story narration first; ignore its onEnd so it cannot start the finale under Keza
+      storyAdvanceBlockedRef.current = true;
       predictShownRef.current = true;
+      cleanupPlayback();
       setPhase({ kind: 'predict' });
       logActivity('ACTIVITY_STARTED', { activityType: 'predict_next' });
       advancingRef.current = false;
       return;
     }
+
+    cleanupPlayback();
 
     if (sentenceIndex >= total - 1) {
       finishStory();
@@ -450,6 +477,7 @@ export default function ImmersiveStoryPlayer({
       userPausedRef.current = true;
       setUserPaused(true);
       setActiveHotspot(null);
+      setWordsSparked((count) => count + 1);
     };
     setOnWordSparkOpen(open);
     return () => setOnWordSparkOpen(null);
@@ -469,6 +497,7 @@ export default function ImmersiveStoryPlayer({
         correct,
         choiceId,
       });
+      storyAdvanceBlockedRef.current = false;
       setPredictResolved(true);
       setPhase({ kind: 'idle' });
       setSentenceIndex(total - 1);
@@ -486,6 +515,7 @@ export default function ImmersiveStoryPlayer({
       setCelebration(null);
       setSoftMiss(null);
       setBusyTap(false);
+      setLastGameMessage(message);
       setPhase({ kind: 'celebrate', message });
     },
     [resetEngagement]
@@ -559,7 +589,7 @@ export default function ImmersiveStoryPlayer({
         if (propType !== target.propType) {
           setMissCount((n) => n + 1);
           setWrongTapPropType(propType);
-          setSoftMiss('Not that one — follow the clue!');
+          setSoftMiss('Keza says: wrong clue path — hunt the treasure!');
           window.setTimeout(() => {
             setWrongTapPropType(null);
             setSoftMiss(null);
@@ -573,7 +603,7 @@ export default function ImmersiveStoryPlayer({
         markPropFound(propType);
         const nextIndex = huntTargetIndex + 1;
         const foundAll = nextIndex >= hunt.targets.length;
-        setCelebration(foundAll ? 'You found every treasure!' : 'Found it! ★');
+        setCelebration(foundAll ? 'All treasures found!' : 'Treasure found! ★');
 
         window.setTimeout(() => {
           setCelebration(null);
@@ -602,7 +632,7 @@ export default function ImmersiveStoryPlayer({
         if (propType !== pair.propType) {
           setMissCount((n) => n + 1);
           setWrongTapPropType(propType);
-          setSoftMiss(`Hmm… not that. Look for “${pair.glossEn}”`);
+          setSoftMiss(`Not that — find “${pair.glossEn}” for ${pair.wordRw}`);
           window.setTimeout(() => {
             setWrongTapPropType(null);
             setSoftMiss(null);
@@ -616,7 +646,7 @@ export default function ImmersiveStoryPlayer({
         markPropFound(propType);
         const nextIndex = vocabPairIndex + 1;
         const done = nextIndex >= vocab.pairs.length;
-        setCelebration(done ? 'Word master!' : `${pair.wordRw} — yes!`);
+        setCelebration(done ? 'Word master!' : `“${pair.wordRw}” — matched!`);
 
         window.setTimeout(() => {
           setCelebration(null);
@@ -702,6 +732,8 @@ export default function ImmersiveStoryPlayer({
       audio.onended = () => {
         setMouthViseme('X');
         if (userPausedRef.current) return;
+        if (storyAdvanceBlockedRef.current) return;
+        if (phaseRef.current === 'predict') return;
         if (useImmersiveStore.getState().activeWordSpark) return;
         advanceSentence();
       };
@@ -784,6 +816,7 @@ export default function ImmersiveStoryPlayer({
   );
 
   const playTts = useCallback(async () => {
+    if (storyAdvanceBlockedRef.current || phaseRef.current === 'predict') return false;
     const text = narrationText(displayLanguage);
     if (!text) return false;
 
@@ -797,6 +830,14 @@ export default function ImmersiveStoryPlayer({
 
     const speakerIndex = resolveActiveCharacterIndex(current, slots, sentenceIndex);
     const speaker = slots[speakerIndex] ?? slots[0];
+
+    if (storyAdvanceBlockedRef.current || phaseRef.current === 'predict') {
+      ttsActiveRef.current = false;
+      stopLipSyncRef.current?.();
+      stopLipSyncRef.current = null;
+      setPlaying(false);
+      return false;
+    }
 
     stopTtsRef.current = await speakNarration(text, {
       engine,
@@ -817,11 +858,28 @@ export default function ImmersiveStoryPlayer({
         ttsActiveRef.current = false;
         ttsPauseResumeRef.current = null;
         if (userPausedRef.current) return;
+        if (storyAdvanceBlockedRef.current) return;
+        if (phaseRef.current === 'predict') return;
         if (useImmersiveStore.getState().activeWordSpark) return;
         advanceSentence();
       },
-      onStart: () => setPlaying(true),
+      onStart: () => {
+        if (storyAdvanceBlockedRef.current || phaseRef.current === 'predict') return;
+        setPlaying(true);
+      },
     });
+
+    if (storyAdvanceBlockedRef.current || phaseRef.current === 'predict') {
+      stopTtsRef.current?.();
+      stopTtsRef.current = null;
+      ttsPauseResumeRef.current = null;
+      ttsActiveRef.current = false;
+      stopLipSyncRef.current?.();
+      stopLipSyncRef.current = null;
+      setPlaying(false);
+      return false;
+    }
+
     return true;
   }, [
     advanceSentence,
@@ -836,6 +894,7 @@ export default function ImmersiveStoryPlayer({
 
   const playCurrentSentence = useCallback(async () => {
     if (!current) return;
+    if (storyAdvanceBlockedRef.current || phaseRef.current === 'predict') return;
 
     const wantsKinyarwanda =
       displayLanguage === 'rw' && Boolean(resolveRwText(current));
@@ -853,6 +912,8 @@ export default function ImmersiveStoryPlayer({
     const duration = Math.max(3500, (text.length || 20) * 55);
     setTimeout(() => {
       if (userPausedRef.current) return;
+      if (storyAdvanceBlockedRef.current) return;
+      if (phaseRef.current === 'predict') return;
       if (useImmersiveStore.getState().activeWordSpark) return;
       advanceSentence();
     }, duration);
@@ -1078,50 +1139,98 @@ export default function ImmersiveStoryPlayer({
     </div>
   );
 
+  useEffect(() => {
+    const hide =
+      phase.kind === 'predict' ||
+      phase.kind === 'choose' ||
+      phase.kind === 'celebrate' ||
+      phase.kind === 'pack';
+    setSceneChromeHidden(hide);
+    return () => setSceneChromeHidden(false);
+  }, [phase.kind, setSceneChromeHidden]);
+
   // Final done screen (no more activities)
   if (completed && phase.kind === 'done') {
     return (
-      <div className="flex min-h-[100dvh] flex-col items-center justify-center bg-[#1e1b18] px-6 py-12 text-center">
-        <p className="mb-2 font-label-sm uppercase tracking-[0.3em] text-[#C4A574]">
-          Urakoze · Well done
-        </p>
-        <h1 className="mb-4 font-headline-lg text-headline-lg text-[#fff8f5]">{title}</h1>
-        <p className="mb-3 max-w-sm font-body-md text-[#ffdbd2]/90">
-          You travelled through the story. Share what you felt with your family.
-        </p>
-        <p
-          className={`mb-8 max-w-md font-body-sm text-sm ${
-            completionSaved === 'saved'
-              ? 'text-[#5a8f6a]'
-              : completionSaved === 'failed'
-                ? 'text-[#FF7956]'
-                : 'text-[#C4A574]'
-          }`}
-        >
-          {completionSaved === 'saved'
-            ? 'Saved on your shelf as finished'
-            : completionSaved === 'failed'
-              ? 'Could not save yet — ask a parent to run the database fix, then tap retry'
-              : 'Saving to your shelf…'}
-        </p>
-        <div className="flex flex-col items-center gap-3">
-          {completionSaved === 'failed' && (
-            <button
-              type="button"
-              onClick={() => void persistCompletion()}
-              className="min-h-12 rounded-xl border border-[#FF7956] px-8 py-3 font-label-md tracking-widest text-[#FF7956]"
-            >
-              Retry save
-            </button>
-          )}
-          <Link
-            href="/kid/library"
-            className="min-h-12 rounded-xl bg-[#FF7956] px-8 py-3 font-label-md tracking-widest text-white"
+      <div className="relative flex min-h-[100dvh] flex-col items-center justify-center overflow-hidden bg-[#1e1b18] px-6 py-12 text-center">
+        <div
+          className="pointer-events-none absolute inset-0 opacity-40"
+          style={{
+            background:
+              'radial-gradient(ellipse at 50% 20%, rgba(255,121,86,0.28), transparent 55%), radial-gradient(ellipse at 80% 80%, rgba(196,165,116,0.18), transparent 45%)',
+          }}
+          aria-hidden
+        />
+        <div className="relative z-10 flex flex-col items-center">
+          <div className="mb-3 animate-[bounce_0.8s_ease]">
+            <KezaMascot size={88} />
+          </div>
+          <p className="mb-2 font-label-sm uppercase tracking-[0.3em] text-[#C4A574]">
+            Urakoze · Well done
+          </p>
+          <h1 className="mb-3 font-headline-lg text-headline-lg text-[#fff8f5]">{title}</h1>
+          <p
+            className="mb-5 max-w-sm text-base text-[#ffdbd2]/90"
+            style={{ fontFamily: "'Baloo 2', cursive, sans-serif" }}
           >
-            See my finished stories
-          </Link>
+            Keza is proud of you — what a story journey!
+          </p>
+
+          {(lastGameMessage || wordsSparked > 0) && (
+            <div className="mb-6 flex flex-wrap items-center justify-center gap-2">
+              {lastGameMessage && (
+                <span
+                  className="rounded-full border border-[#FF7956]/45 bg-[#2a1810]/90 px-3 py-1.5 text-sm text-[#fff8f5]"
+                  style={{ fontFamily: "'Baloo 2', cursive, sans-serif" }}
+                >
+                  ★ {lastGameMessage}
+                </span>
+              )}
+              {wordsSparked > 0 && (
+                <span
+                  className="rounded-full border border-[#C4A574]/45 bg-[#241810]/90 px-3 py-1.5 text-sm text-[#ffdbd2]"
+                  style={{ fontFamily: "'Baloo 2', cursive, sans-serif" }}
+                >
+                  {wordsSparked} word{wordsSparked === 1 ? '' : 's'} sparked with Keza
+                </span>
+              )}
+            </div>
+          )}
+
+          <p
+            className={`mb-8 max-w-md font-body-sm text-sm ${
+              completionSaved === 'saved'
+                ? 'text-[#5a8f6a]'
+                : completionSaved === 'failed'
+                  ? 'text-[#FF7956]'
+                  : 'text-[#C4A574]'
+            }`}
+          >
+            {completionSaved === 'saved'
+              ? 'Saved on your shelf as finished'
+              : completionSaved === 'failed'
+                ? 'Could not save yet — ask a parent to run the database fix, then tap retry'
+                : 'Saving to your shelf…'}
+          </p>
+          <div className="flex flex-col items-center gap-3">
+            {completionSaved === 'failed' && (
+              <button
+                type="button"
+                onClick={() => void persistCompletion()}
+                className="min-h-12 rounded-xl border border-[#FF7956] px-8 py-3 font-label-md tracking-widest text-[#FF7956]"
+              >
+                Retry save
+              </button>
+            )}
+            <Link
+              href="/kid/library"
+              className="min-h-12 rounded-xl bg-[#FF7956] px-8 py-3 font-label-md tracking-widest text-white shadow-lg shadow-[#FF7956]/25"
+            >
+              See my finished stories
+            </Link>
+          </div>
+          <StoryRecommendations currentStoryId={storyId} variant="dark" />
         </div>
-        <StoryRecommendations currentStoryId={storyId} variant="dark" />
       </div>
     );
   }
@@ -1158,7 +1267,7 @@ export default function ImmersiveStoryPlayer({
   if (!started) {
     return (
       <div className="relative min-h-[100dvh] overflow-hidden bg-[#1e1b18]">
-        <StoryCanvas />
+        <StoryCanvas showDialogueHud={false} />
         <div className="absolute inset-0 flex flex-col items-center justify-end bg-gradient-to-t from-[#1e1b18] via-[#1e1b18]/40 to-transparent px-6 pb-16 pt-32">
           <p className="mb-2 font-label-sm uppercase tracking-[0.3em] text-[#C4A574]">Inkuru</p>
           <h1 className="mb-6 max-w-lg text-center font-headline-md text-2xl text-[#fff8f5] md:text-3xl">
@@ -1184,10 +1293,16 @@ export default function ImmersiveStoryPlayer({
   }
 
   const showHud = !completed && phase.kind !== 'predict';
+  const showDialogueHud =
+    !completed &&
+    phase.kind !== 'predict' &&
+    phase.kind !== 'choose' &&
+    phase.kind !== 'celebrate' &&
+    phase.kind !== 'pack';
 
   return (
     <div className="relative min-h-[100dvh] overflow-hidden bg-[#1e1b18]">
-      <StoryCanvas />
+      <StoryCanvas showDialogueHud={showDialogueHud} />
 
       {completed && (phase.kind === 'pack' || phase.kind === 'choose') && (
         <button

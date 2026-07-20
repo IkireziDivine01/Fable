@@ -1,17 +1,139 @@
+import { getEnvironmentPreset } from './presets';
 import { VALID_PROP_TYPES } from './sceneSpec';
 import type {
   EngagementActivity,
+  EnvironmentType,
   PredictNextActivity,
   PredictNextChoice,
   PropType,
   SceneBrief,
   SequenceActivity,
   SequenceBeat,
+  StorySceneSpec,
   TreasureHuntActivity,
   TreasureHuntTarget,
   VocabMatchActivity,
   VocabMatchPair,
 } from './types';
+
+/** Kid-friendly prop catalog for legacy engagement fallbacks */
+const PROP_CATALOG: Record<
+  string,
+  { wordRw: string; glossEn: string; clueEn: string; clueRw: string; revealEn: string; revealRw: string }
+> = {
+  tree: {
+    wordRw: 'igiti',
+    glossEn: 'tree',
+    clueEn: 'Tall and leafy — shade for the story',
+    clueRw: 'Kirekire gifite amababi',
+    revealEn: 'You found the tree!',
+    revealRw: 'Wabonye igiti!',
+  },
+  hut: {
+    wordRw: 'inzu',
+    glossEn: 'house',
+    clueEn: 'A cozy home of clay and straw',
+    clueRw: 'Inzu y\'ibumba n\'ibyatsi',
+    revealEn: 'Home sweet hut!',
+    revealRw: 'Inzu nziza!',
+  },
+  fire: {
+    wordRw: 'umuriro',
+    glossEn: 'fire',
+    clueEn: 'Warm glow where stories gather',
+    clueRw: 'Umucyo ushyushye',
+    revealEn: 'The fire crackles hello!',
+    revealRw: 'Umuriro uramukanye!',
+  },
+  stall: {
+    wordRw: 'iduka',
+    glossEn: 'market stall',
+    clueEn: 'A little shop full of treats',
+    clueRw: 'Iduka rito ryuzuye',
+    revealEn: 'Market treasure found!',
+    revealRw: 'Wabonye iduka!',
+  },
+  board: {
+    wordRw: 'ikibaho',
+    glossEn: 'board',
+    clueEn: 'Where lessons and drawings live',
+    clueRw: 'Aho amasomo aba',
+    revealEn: 'You found the board!',
+    revealRw: 'Wabonye ikibaho!',
+  },
+  rock: {
+    wordRw: 'ibuye',
+    glossEn: 'rock',
+    clueEn: 'A sturdy stone by the path',
+    clueRw: 'Ibuye rikomeye',
+    revealEn: 'Solid find!',
+    revealRw: 'Wabonye ibuye!',
+  },
+  flower: {
+    wordRw: 'indabo',
+    glossEn: 'flower',
+    clueEn: 'A bright bloom for smiling eyes',
+    clueRw: 'Indabo nziza',
+    revealEn: 'Pretty flower!',
+    revealRw: 'Indabo nziza!',
+  },
+  bench: {
+    wordRw: 'intebe',
+    glossEn: 'bench',
+    clueEn: 'A place to sit and listen',
+    clueRw: 'Aho bacara bakumva',
+    revealEn: 'Take a seat — you found it!',
+    revealRw: 'Wabonye intebe!',
+  },
+  banana_tree: {
+    wordRw: 'umutoki',
+    glossEn: 'banana tree',
+    clueEn: 'Broad leaves and sweet fruit',
+    clueRw: 'Umutoki w\'imineke',
+    revealEn: 'Banana tree treasure!',
+    revealRw: 'Wabonye umutoki!',
+  },
+  path: {
+    wordRw: 'inzira',
+    glossEn: 'path',
+    clueEn: 'The road the story walks on',
+    clueRw: 'Inzira inkuru ikurikira',
+    revealEn: 'You found the path!',
+    revealRw: 'Wabonye inzira!',
+  },
+  water_jug: {
+    wordRw: 'umucanga',
+    glossEn: 'water jug',
+    clueEn: 'Cool water for thirsty travelers',
+    clueRw: 'Amazi yo kunywa',
+    revealEn: 'Fresh water found!',
+    revealRw: 'Wabonye umucanga!',
+  },
+  drum: {
+    wordRw: 'ingoma',
+    glossEn: 'drum',
+    clueEn: 'Listen for the heartbeat of the dance',
+    clueRw: 'Umubyinanyi w\'ingoma',
+    revealEn: 'Boom! The drum!',
+    revealRw: 'Ingoma! Ryiza!',
+  },
+  goat: {
+    wordRw: 'ihene',
+    glossEn: 'goat',
+    clueEn: 'A bleating friend in the grass',
+    clueRw: 'Inshuti ivuga mee',
+    revealEn: 'Hello, little goat!',
+    revealRw: 'Muraho, ihene!',
+  },
+  millet_field: {
+    wordRw: 'uburo',
+    glossEn: 'millet field',
+    clueEn: 'Golden grain waving in the breeze',
+    clueRw: 'Uburo bwiza',
+    revealEn: 'You found the millet!',
+    revealRw: 'Wabonye uburo!',
+  },
+};
 
 const ACTIVITY_TYPES = new Set<EngagementActivity['type']>([
   'treasure_hunt',
@@ -280,4 +402,311 @@ export function getPostStoryActivities(
     if (found && found.type !== 'predict_next') result.push(found);
   }
   return result;
+}
+
+export interface EnsureEngagementContext {
+  sceneBrief?: SceneBrief | null;
+  sceneSpec?: StorySceneSpec | null;
+  environment?: EnvironmentType;
+  sentences?: Array<
+    | string
+    | {
+        sentence_text?: string | null;
+        text?: string | null;
+        kinyarwanda_text?: string | null;
+        kinyarwandaText?: string | null;
+      }
+  >;
+}
+
+function sentenceText(
+  raw:
+    | string
+    | {
+        sentence_text?: string | null;
+        text?: string | null;
+        kinyarwanda_text?: string | null;
+        kinyarwandaText?: string | null;
+      }
+    | undefined
+): { en: string; rw: string } {
+  if (raw == null) return { en: '', rw: '' };
+  if (typeof raw === 'string') return { en: raw.trim(), rw: '' };
+  const en = String(raw.sentence_text ?? raw.text ?? '').trim();
+  const rw = String(raw.kinyarwanda_text ?? raw.kinyarwandaText ?? '').trim();
+  return { en, rw };
+}
+
+function snippetLabel(text: string, max = 72): string {
+  const clean = text.replace(/\s+/g, ' ').trim();
+  if (clean.length <= max) return clean;
+  const cut = clean.slice(0, max - 1);
+  const lastSpace = cut.lastIndexOf(' ');
+  return `${(lastSpace > 24 ? cut.slice(0, lastSpace) : cut).trim()}…`;
+}
+
+/** Unique prop types available in the scene (brief → spec → environment preset). */
+export function resolveEngagementPropTypes(
+  ctx: EnsureEngagementContext
+): PropType[] {
+  const seen = new Set<PropType>();
+  const push = (type: string) => {
+    if (!VALID_PROP_TYPES.has(type) || !PROP_CATALOG[type]) return;
+    seen.add(type as PropType);
+  };
+
+  for (const prop of ctx.sceneBrief?.keyProps ?? []) {
+    push(prop.type);
+  }
+  for (const obj of ctx.sceneSpec?.objects ?? []) {
+    push(obj.type);
+  }
+  if (seen.size < 2 && ctx.environment) {
+    for (const obj of getEnvironmentPreset(ctx.environment).objects) {
+      push(obj.type);
+    }
+  }
+
+  return [...seen];
+}
+
+function briefForNormalize(
+  ctx: EnsureEngagementContext,
+  props: PropType[]
+): SceneBrief {
+  if (ctx.sceneBrief?.keyProps?.length) return ctx.sceneBrief;
+  return {
+    mood: ctx.sceneBrief?.mood ?? 'warm',
+    density: ctx.sceneBrief?.density ?? 'balanced',
+    paletteHint: ctx.sceneBrief?.paletteHint ?? {
+      warmth: 0.55,
+      saturation: 0.5,
+      contrast: 0.45,
+    },
+    keyProps: props.map((type) => ({ type, role: 'dressing' as const })),
+  };
+}
+
+function buildDefaultTreasureHunt(props: PropType[]): TreasureHuntActivity | undefined {
+  const targets: TreasureHuntTarget[] = [];
+  for (const propType of props) {
+    const cat = PROP_CATALOG[propType];
+    if (!cat) continue;
+    targets.push({
+      propType,
+      clueEn: cat.clueEn,
+      clueRw: cat.clueRw,
+      revealEn: cat.revealEn,
+      revealRw: cat.revealRw,
+    });
+    if (targets.length >= 3) break;
+  }
+  if (targets.length < 2) return undefined;
+  return {
+    type: 'treasure_hunt',
+    introEn: 'Find the story treasures hiding in the world!',
+    introRw: 'Shaka ibintu by\'inkuru mu isi!',
+    targets,
+  };
+}
+
+function buildDefaultVocabMatch(props: PropType[]): VocabMatchActivity | undefined {
+  const pairs: VocabMatchPair[] = [];
+  for (const propType of props) {
+    const cat = PROP_CATALOG[propType];
+    if (!cat) continue;
+    pairs.push({
+      propType,
+      wordRw: cat.wordRw,
+      glossEn: cat.glossEn,
+    });
+    if (pairs.length >= 3) break;
+  }
+  if (pairs.length < 3) return undefined;
+  return {
+    type: 'vocab_match',
+    promptEn: 'Tap the thing that matches each word!',
+    promptRw: 'Kanda ikintu gihuza n\'ijambo!',
+    pairs,
+  };
+}
+
+function buildDefaultSequence(
+  sentences: EnsureEngagementContext['sentences']
+): SequenceActivity | undefined {
+  const lines = (sentences ?? [])
+    .map(sentenceText)
+    .filter((s) => s.en.length > 0);
+  if (lines.length < 4) return undefined;
+
+  const indexes =
+    lines.length === 4
+      ? [0, 1, 2, 3]
+      : [
+          0,
+          Math.floor((lines.length - 1) / 3),
+          Math.floor((2 * (lines.length - 1)) / 3),
+          lines.length - 1,
+        ];
+  // Deduplicate indexes if story is short-ish
+  const unique = [...new Set(indexes)];
+  while (unique.length < 4 && unique.length < lines.length) {
+    for (let i = 0; i < lines.length && unique.length < 4; i++) {
+      if (!unique.includes(i)) unique.push(i);
+    }
+  }
+  if (unique.length < 4) return undefined;
+
+  const beats: SequenceBeat[] = unique.slice(0, 4).map((lineIndex, order) => {
+    const line = lines[lineIndex];
+    const beat: SequenceBeat = {
+      id: `beat-${order}`,
+      labelEn: snippetLabel(line.en),
+      correctOrder: order,
+    };
+    if (line.rw) beat.labelRw = snippetLabel(line.rw);
+    return beat;
+  });
+
+  return {
+    type: 'sequence',
+    promptEn: 'Put the story moments back in order!',
+    promptRw: 'Shyira ibihe by\'inkuru mu buryo bukwiriye!',
+    beats,
+  };
+}
+
+function buildDefaultPredictNext(
+  sentences: EnsureEngagementContext['sentences']
+): PredictNextActivity | undefined {
+  const lines = (sentences ?? [])
+    .map(sentenceText)
+    .filter((s) => s.en.length > 0);
+  if (lines.length < 4) return undefined;
+
+  const last = lines[lines.length - 1];
+  const earlier = lines.slice(0, -1);
+  const distractorA = earlier[Math.floor(earlier.length / 3)] ?? earlier[0];
+  const distractorB =
+    earlier[Math.floor((2 * earlier.length) / 3)] ?? earlier[earlier.length - 1];
+
+  const choices: PredictNextChoice[] = [
+    { id: 'a', textEn: snippetLabel(distractorA.en, 100) },
+    { id: 'b', textEn: snippetLabel(last.en, 100) },
+    { id: 'c', textEn: snippetLabel(distractorB.en, 100) },
+  ];
+  if (distractorA.rw) choices[0].textRw = snippetLabel(distractorA.rw, 100);
+  if (last.rw) choices[1].textRw = snippetLabel(last.rw, 100);
+  if (distractorB.rw) choices[2].textRw = snippetLabel(distractorB.rw, 100);
+
+  // Ensure three distinct choice texts
+  const texts = new Set(choices.map((c) => c.textEn.toLowerCase()));
+  if (texts.size < 3) {
+    choices[0].textEn = 'They rest quietly at home';
+    choices[2].textEn = 'They run far away forever';
+    delete choices[0].textRw;
+    delete choices[2].textRw;
+  }
+
+  return {
+    type: 'predict_next',
+    promptEn: 'What happens at the end?',
+    promptRw: 'Ni iki kizaba ku mpera?',
+    choices,
+    correctChoiceId: 'b',
+    encouragementEn: 'Nice thinking — here comes the real ending!',
+    encouragementRw: 'Utekereje neza — reba uko inkuru irangira!',
+  };
+}
+
+/**
+ * Build a full engagement pack from scene + sentences for legacy stories
+ * that predate Claude-generated engagementActivities.
+ */
+export function buildDefaultEngagementActivities(
+  ctx: EnsureEngagementContext
+): EngagementActivity[] | undefined {
+  const props = resolveEngagementPropTypes(ctx);
+  const brief = briefForNormalize(ctx, props);
+  const raw: EngagementActivity[] = [];
+
+  const predict = buildDefaultPredictNext(ctx.sentences);
+  if (predict) raw.push(predict);
+
+  const hunt = buildDefaultTreasureHunt(props);
+  if (hunt) raw.push(hunt);
+
+  const vocab = buildDefaultVocabMatch(props);
+  if (vocab) raw.push(vocab);
+
+  const sequence = buildDefaultSequence(ctx.sentences);
+  if (sequence) raw.push(sequence);
+
+  return normalizeEngagementActivities(raw, brief, {
+    sentenceCount: ctx.sentences?.length ?? 0,
+  });
+}
+
+/**
+ * Prefer stored AI activities when valid; fill any missing activity types
+ * (or replace an empty pack) so older stories still get predict + post games.
+ */
+export function ensureEngagementActivities(
+  stored: EngagementActivity[] | null | undefined,
+  ctx: EnsureEngagementContext
+): EngagementActivity[] | undefined {
+  const props = resolveEngagementPropTypes(ctx);
+  const brief = briefForNormalize(ctx, props);
+  const sentenceCount = ctx.sentences?.length ?? 0;
+
+  const normalized = normalizeEngagementActivities(stored, brief, { sentenceCount });
+  const defaults = buildDefaultEngagementActivities(ctx);
+
+  if (!normalized?.length) {
+    return defaults;
+  }
+
+  const byType = new Map<EngagementActivity['type'], EngagementActivity>();
+  for (const activity of normalized) {
+    byType.set(activity.type, activity);
+  }
+
+  const defaultByType = new Map<EngagementActivity['type'], EngagementActivity>();
+  for (const activity of defaults ?? []) {
+    defaultByType.set(activity.type, activity);
+  }
+
+  // Fill predict if missing
+  if (!byType.has('predict_next')) {
+    const fallbackPredict = defaultByType.get('predict_next');
+    if (fallbackPredict) byType.set('predict_next', fallbackPredict);
+  }
+
+  // Fill post gaps up to 2 without dropping stored post activities
+  const postTypes: EngagementActivity['type'][] = [
+    'treasure_hunt',
+    'vocab_match',
+    'sequence',
+  ];
+  let postCount = postTypes.filter((t) => byType.has(t)).length;
+  for (const type of postTypes) {
+    if (postCount >= 2) break;
+    if (byType.has(type)) continue;
+    const fallback = defaultByType.get(type);
+    if (!fallback) continue;
+    byType.set(type, fallback);
+    postCount += 1;
+  }
+
+  const post = postTypes
+    .map((t) => byType.get(t))
+    .filter((a): a is EngagementActivity => Boolean(a))
+    .slice(0, 2);
+
+  const predict = byType.get('predict_next');
+  const result: EngagementActivity[] = [];
+  if (predict) result.push(predict);
+  result.push(...post);
+
+  return result.length > 0 ? result : defaults;
 }

@@ -74,6 +74,7 @@ export default function StoryDialogueHud({ compact = false }: StoryDialogueHudPr
   const setActiveWordSpark = useImmersiveStore((s) => s.setActiveWordSpark);
   const onWordSparkOpen = useImmersiveStore((s) => s.onWordSparkOpen);
   const activeWordSpark = useImmersiveStore((s) => s.activeWordSpark);
+  const [showTapHint, setShowTapHint] = useState(true);
 
   const character = characters[activeCharacterIndex] ?? characters[0];
   const meta = character ? CHARACTER_META[character.type] : null;
@@ -105,6 +106,7 @@ export default function StoryDialogueHud({ compact = false }: StoryDialogueHudPr
 
   const openWordSpark = (word: string) => {
     if (!wordsInteractive || !word.trim()) return;
+    setShowTapHint(false);
     onWordSparkOpen?.();
     setActiveWordSpark({
       word: word.trim(),
@@ -131,6 +133,10 @@ export default function StoryDialogueHud({ compact = false }: StoryDialogueHudPr
         @keyframes continue-bounce {
           0%, 100% { transform: translateX(0); }
           50% { transform: translateX(3px); }
+        }
+        @keyframes word-tap-hint {
+          0%, 100% { background-color: transparent; }
+          50% { background-color: rgba(255, 121, 86, 0.28); }
         }
       `}</style>
 
@@ -246,7 +252,9 @@ export default function StoryDialogueHud({ compact = false }: StoryDialogueHudPr
                 {tokens
                   ? (
                     <>
-                      {tokens.map((token, i) => {
+                      {(() => {
+                        let firstTappable = true;
+                        return tokens.map((token, i) => {
                       if (token.kind === 'gap') {
                         return <span key={`g-${i}`}>{token.text}</span>;
                       }
@@ -256,6 +264,8 @@ export default function StoryDialogueHud({ compact = false }: StoryDialogueHudPr
                       const selected =
                         activeWordSpark?.word.toLowerCase() === token.text.toLowerCase() &&
                         activeWordSpark.sentenceIndex === sentenceIndex;
+                      const hintPulse = showTapHint && firstTappable;
+                      firstTappable = false;
                       return (
                         <button
                           key={`w-${i}`}
@@ -269,12 +279,18 @@ export default function StoryDialogueHud({ compact = false }: StoryDialogueHudPr
                               ? 'bg-[#FF7956]/35 text-[#fff8f5] underline decoration-[#FF7956] decoration-2 underline-offset-2'
                               : 'underline decoration-[#C4A574]/55 decoration-dotted underline-offset-2 hover:bg-[#FF7956]/20 hover:decoration-[#FF7956]'
                           }`}
+                          style={
+                            hintPulse
+                              ? { animation: 'word-tap-hint 1.4s ease-in-out infinite' }
+                              : undefined
+                          }
                           aria-label={`Ask Keza about ${token.text}`}
                         >
                           {token.raw}
                         </button>
                       );
-                      })}
+                        });
+                      })()}
                       {isPlaying && typedText.length < displayText.length && (
                         <span className="ml-0.5 inline-block h-[1em] w-0.5 animate-pulse bg-[#FF7956]" />
                       )}

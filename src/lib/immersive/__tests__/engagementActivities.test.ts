@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildDefaultEngagementActivities,
+  ensureEngagementActivities,
   getPostStoryActivities,
   getPredictNextActivity,
   normalizeEngagementActivities,
@@ -234,5 +236,129 @@ describe('activity getters', () => {
       'sequence',
     ]);
     expect(getPostStoryActivities(undefined)).toEqual([]);
+  });
+});
+
+const longSentences = [
+  'Morning light woke the village.',
+  'Grandmother walked to the market.',
+  'They sang a song by the fire.',
+  'Everyone shared food at home.',
+  'The stars watched them sleep.',
+];
+
+describe('buildDefaultEngagementActivities', () => {
+  it('builds predict + post pack from sceneBrief and sentences', () => {
+    const activities = buildDefaultEngagementActivities({
+      sceneBrief,
+      sentences: longSentences,
+      environment: 'village',
+    });
+
+    expect(activities?.map((a) => a.type)).toEqual([
+      'predict_next',
+      'treasure_hunt',
+      'vocab_match',
+    ]);
+
+    const predict = activities?.find((a) => a.type === 'predict_next');
+    expect(predict?.type).toBe('predict_next');
+    if (predict?.type === 'predict_next') {
+      expect(predict.choices).toHaveLength(3);
+      expect(predict.correctChoiceId).toBe('b');
+    }
+  });
+
+  it('skips predict_next for short stories', () => {
+    const activities = buildDefaultEngagementActivities({
+      sceneBrief,
+      sentences: ['One', 'Two', 'Three'],
+      environment: 'village',
+    });
+    expect(activities?.some((a) => a.type === 'predict_next')).toBe(false);
+    expect(activities?.some((a) => a.type === 'treasure_hunt')).toBe(true);
+  });
+
+  it('falls back to environment props when sceneBrief has no keyProps', () => {
+    const emptyBrief: SceneBrief = {
+      mood: 'warm',
+      density: 'sparse',
+      paletteHint: { warmth: 0.5, saturation: 0.5, contrast: 0.5 },
+      keyProps: [],
+    };
+    const activities = buildDefaultEngagementActivities({
+      sceneBrief: emptyBrief,
+      sentences: longSentences,
+      environment: 'village',
+    });
+    expect(activities?.some((a) => a.type === 'treasure_hunt')).toBe(true);
+    expect(activities?.some((a) => a.type === 'vocab_match')).toBe(true);
+  });
+
+  it('still builds sequence when props are unavailable', () => {
+    const activities = buildDefaultEngagementActivities({
+      sceneBrief: {
+        mood: 'warm',
+        density: 'sparse',
+        paletteHint: { warmth: 0.5, saturation: 0.5, contrast: 0.5 },
+        keyProps: [],
+      },
+      sentences: longSentences,
+    });
+    expect(activities?.map((a) => a.type)).toEqual(['predict_next', 'sequence']);
+  });
+});
+
+describe('ensureEngagementActivities', () => {
+  it('replaces empty/missing stored pack with defaults', () => {
+    const ensured = ensureEngagementActivities(null, {
+      sceneBrief,
+      sentences: longSentences,
+      environment: 'village',
+    });
+    expect(ensured?.length).toBeGreaterThan(0);
+    expect(ensured?.some((a) => a.type === 'predict_next')).toBe(true);
+    expect(getPostStoryActivities(ensured).length).toBeGreaterThan(0);
+  });
+
+  it('keeps stored AI activities and does not overwrite them', () => {
+    const stored = [
+      predictNext({
+        promptEn: 'Custom AI prompt',
+        correctChoiceId: 'b',
+      }),
+      treasureHunt({ introEn: 'AI hunt intro' }),
+    ];
+    const ensured = ensureEngagementActivities(stored as EngagementActivity[], {
+      sceneBrief,
+      sentences: longSentences,
+      environment: 'village',
+    });
+
+    const predict = ensured?.find((a) => a.type === 'predict_next');
+    expect(predict?.type).toBe('predict_next');
+    if (predict?.type === 'predict_next') {
+      expect(predict.promptEn).toBe('Custom AI prompt');
+    }
+
+    const hunt = ensured?.find((a) => a.type === 'treasure_hunt');
+    expect(hunt?.type).toBe('treasure_hunt');
+    if (hunt?.type === 'treasure_hunt') {
+      expect(hunt.introEn).toBe('AI hunt intro');
+    }
+  });
+
+  it('fills missing activity types from defaults', () => {
+    const stored = [sequence()];
+    const ensured = ensureEngagementActivities(stored as EngagementActivity[], {
+      sceneBrief,
+      sentences: longSentences,
+      environment: 'village',
+    });
+
+    expect(ensured?.some((a) => a.type === 'predict_next')).toBe(true);
+    expect(ensured?.some((a) => a.type === 'sequence')).toBe(true);
+    // Cap still applies: at most 2 post activities
+    expect(getPostStoryActivities(ensured).length).toBeLessThanOrEqual(2);
   });
 });

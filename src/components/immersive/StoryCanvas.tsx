@@ -72,6 +72,7 @@ function SceneContents({
   const currentSentenceText = useImmersiveStore((s) => s.currentSentenceText);
   const sentenceIndex = useImmersiveStore((s) => s.sentenceIndex);
   const activeWordSpark = useImmersiveStore((s) => s.activeWordSpark);
+  const sceneChromeHidden = useImmersiveStore((s) => s.sceneChromeHidden);
   const eventGesture = useActiveGesture();
 
   const slots =
@@ -83,7 +84,7 @@ function SceneContents({
   // Prefer AI/heuristic event gesture; first line gets a welcoming wave
   const reactionGesture =
     eventGesture ?? (sentenceIndex === 0 && (isPlaying || Boolean(currentSentenceText)) ? 'wave' : null);
-  const kezaOpen = Boolean(activeWordSpark);
+  const chromeHidden = Boolean(activeWordSpark) || sceneChromeHidden;
 
   return (
     <>
@@ -113,14 +114,14 @@ function SceneContents({
             faceShape={appearance.faceShape}
             garmentStyle={appearance.garmentStyle}
             personalityPose={appearance.personalityPose}
-            reactionGesture={isActive && !kezaOpen ? reactionGesture : null}
+            reactionGesture={isActive && !chromeHidden ? reactionGesture : null}
             gestureKey={sentenceIndex}
             isSpeaking={
-              !kezaOpen && isActive && (isPlaying || Boolean(currentSentenceText))
+              !chromeHidden && isActive && (isPlaying || Boolean(currentSentenceText))
             }
-            idleMotion={!isActive || worldPreviewActive || kezaOpen}
-            previewSpeech={worldPreviewActive && isActive && !kezaOpen}
-            showNameLabel={!kezaOpen && (showCharacterLabels || isActive)}
+            idleMotion={!isActive || worldPreviewActive || chromeHidden}
+            previewSpeech={worldPreviewActive && isActive && !chromeHidden}
+            showNameLabel={!chromeHidden && (showCharacterLabels || isActive)}
             characterType={char.type}
             characterName={char.name.trim() || meta.label}
           />
