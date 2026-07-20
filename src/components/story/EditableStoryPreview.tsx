@@ -77,9 +77,13 @@ export default function EditableStoryPreview({
                   <input
                     value={sentence.kinyarwandaText ?? ''}
                     onChange={(e) => updateSentence(index, { kinyarwandaText: e.target.value })}
-                    placeholder="Kinyarwanda line (optional)"
+                    placeholder="Kinyarwanda line (required)"
+                    required
                     className={storyTextareaClass}
                   />
+                  {!sentence.kinyarwandaText?.trim() && (
+                    <p className="text-xs text-[#a7391c]">Kinyarwanda is required for every sentence.</p>
+                  )}
                   <button
                     type="button"
                     onClick={() => setEditingIndex(null)}
@@ -95,8 +99,10 @@ export default function EditableStoryPreview({
                   className="w-full text-left"
                 >
                   <p className="font-body-md text-[#1e1b18]">{sentence.sentenceText}</p>
-                  {sentence.kinyarwandaText && (
+                  {sentence.kinyarwandaText?.trim() ? (
                     <p className="mt-2 text-sm italic text-[#524348]">{sentence.kinyarwandaText}</p>
+                  ) : (
+                    <p className="mt-2 text-sm text-[#a7391c]">Add Kinyarwanda translation</p>
                   )}
                   <p className="mt-2 text-xs text-[#857278]">Click to edit this line only</p>
                 </button>
@@ -106,8 +112,18 @@ export default function EditableStoryPreview({
         })}
       </ol>
 
-      <StoryButton onClick={onPublish} disabled={publishing} className="w-full">
-        {publishing ? 'Saving…' : continueLabel}
+      <StoryButton
+        onClick={onPublish}
+        disabled={
+          publishing || story.sentences.some((s) => !s.kinyarwandaText?.trim())
+        }
+        className="w-full"
+      >
+        {publishing
+          ? 'Saving…'
+          : story.sentences.some((s) => !s.kinyarwandaText?.trim())
+            ? 'Add Kinyarwanda to every sentence'
+            : continueLabel}
       </StoryButton>
     </div>
   );

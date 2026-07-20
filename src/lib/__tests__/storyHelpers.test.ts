@@ -10,9 +10,21 @@ function minimalStory(overrides: Record<string, unknown> = {}) {
     title: 'The Drum at Dawn',
     themes: ['Ubuntu'],
     sentences: [
-      { text: 'The village woke early.', order: 0 },
-      { text: 'Ama sang by the fire.', order: 1 },
-      { text: 'Everyone shared the beat.', order: 2 },
+      {
+        text: 'The village woke early.',
+        order: 0,
+        kinyarwandaText: 'Umudugudu wabyutse kare.',
+      },
+      {
+        text: 'Ama sang by the fire.',
+        order: 1,
+        kinyarwandaText: 'Ama yaririmbye ku gicaniro.',
+      },
+      {
+        text: 'Everyone shared the beat.',
+        order: 2,
+        kinyarwandaText: 'Bose basangiye umuvuduko.',
+      },
     ],
     ...overrides,
   };
@@ -76,25 +88,36 @@ describe('validateGeneratedStory', () => {
     ).toThrow(/at least 3 sentences/i);
   });
 
+  it('throws when Kinyarwanda is missing on a sentence', () => {
+    expect(() =>
+      validateGeneratedStory(
+        minimalStory({
+          sentences: [
+            { text: 'One.', kinyarwandaText: 'Rimwe.' },
+            { text: 'Two.' },
+            { text: 'Three.', kinyarwandaText: 'Gatatu.' },
+          ],
+        })
+      )
+    ).toThrow(/Kinyarwanda is required/i);
+  });
+
   it('accepts sentences from an array', () => {
     const story = validateGeneratedStory(minimalStory());
     expect(story.title).toBe('The Drum at Dawn');
     expect(story.sentences).toHaveLength(3);
     expect(story.sentences[0]?.sentenceText).toBe('The village woke early.');
+    expect(story.sentences[0]?.kinyarwandaText).toBe('Umudugudu wabyutse kare.');
   });
 
-  it('builds sentences from transcript when array is missing', () => {
-    const story = validateGeneratedStory({
-      title: 'Three Beats',
-      themes: ['Ubuntu'],
-      transcript: 'First beat. Second beat. Third beat.',
-    });
-
-    expect(story.sentences.map((s) => s.sentenceText)).toEqual([
-      'First beat.',
-      'Second beat.',
-      'Third beat.',
-    ]);
+  it('rejects transcript-only payloads without Kinyarwanda', () => {
+    expect(() =>
+      validateGeneratedStory({
+        title: 'Three Beats',
+        themes: ['Ubuntu'],
+        transcript: 'First beat. Second beat. Third beat.',
+      })
+    ).toThrow(/Kinyarwanda is required/i);
   });
 
   it('passes through normalized sceneBrief and engagementActivities', () => {
@@ -131,10 +154,10 @@ describe('validateGeneratedStory', () => {
           },
         ],
         sentences: [
-          { text: 'One.' },
-          { text: 'Two.' },
-          { text: 'Three.' },
-          { text: 'Four.' },
+          { text: 'One.', kinyarwandaText: 'Rimwe.' },
+          { text: 'Two.', kinyarwandaText: 'Kabiri.' },
+          { text: 'Three.', kinyarwandaText: 'Gatatu.' },
+          { text: 'Four.', kinyarwandaText: 'Kane.' },
         ],
       })
     );

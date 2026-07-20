@@ -5,6 +5,7 @@ import {
   listStoriesForHousehold,
 } from '@/lib/stories-server';
 import type { StoryGenerationType, StorySentenceInput } from '@/lib/storyHelpers';
+import { assertSentencesHaveKinyarwanda } from '@/lib/storyHelpers';
 import { NextResponse } from 'next/server';
 
 export async function GET() {
@@ -65,6 +66,15 @@ export async function POST(request: Request) {
     if (!title || !transcript || sentences.length < 3) {
       return NextResponse.json(
         { error: 'Title, transcript, and at least 3 sentences are required.' },
+        { status: 400 }
+      );
+    }
+
+    try {
+      assertSentencesHaveKinyarwanda(sentences);
+    } catch (err) {
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : 'Kinyarwanda is required' },
         { status: 400 }
       );
     }

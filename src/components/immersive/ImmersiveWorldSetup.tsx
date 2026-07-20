@@ -105,8 +105,8 @@ export default function ImmersiveWorldSetup({
         <div>
           <p className="font-body-md text-[#1e1b18]">AI voice narration</p>
           <p className="text-sm text-[#857278]">
-            Mateza reads Kinyarwanda lines with a natural accent; English uses the browser voice when
-            you skip recording your own.
+            ElevenLabs narrates English; Proto narrates Kinyarwanda — each in the character&apos;s
+            voice tone when you skip recording your own.
           </p>
         </div>
       </label>

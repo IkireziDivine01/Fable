@@ -68,6 +68,15 @@ export default function EditSentencesPage() {
     setSaving(true);
     setError('');
     try {
+      const missing = sentences
+        .map((s, i) => (!s.kinyarwandaText?.trim() ? i + 1 : null))
+        .filter((n): n is number => n != null);
+      if (missing.length > 0) {
+        throw new Error(
+          `Kinyarwanda is required for every sentence. Missing on sentence${missing.length === 1 ? '' : 's'} ${missing.join(', ')}.`
+        );
+      }
+
       const response = await fetch(`/api/stories/${storyId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -197,15 +206,19 @@ export default function EditSentencesPage() {
                 </label>
                 <label className="block">
                   <span className="mb-1 block font-label-sm uppercase tracking-widest text-[#857278]">
-                    Kinyarwanda (optional)
+                    Kinyarwanda (required)
                   </span>
                   <input
                     value={sentence.kinyarwandaText ?? ''}
                     onChange={(e) =>
                       updateSentence(sentence.id, { kinyarwandaText: e.target.value })
                     }
+                    required
                     className={storyInputClass}
                   />
+                  {!sentence.kinyarwandaText?.trim() && (
+                    <p className="mt-1 text-xs text-[#a7391c]">Add the Ikinyarwanda line for this sentence.</p>
+                  )}
                 </label>
               </div>
             )}
@@ -213,8 +226,16 @@ export default function EditSentencesPage() {
         ))}
       </div>
 
-      <StoryButton onClick={saveSentences} disabled={saving} className="mt-8 w-full">
-        {saving ? 'Saving…' : 'Save all sentences'}
+      <StoryButton
+        onClick={saveSentences}
+        disabled={saving || sentences.some((s) => !s.kinyarwandaText?.trim())}
+        className="mt-8 w-full"
+      >
+        {saving
+          ? 'Saving…'
+          : sentences.some((s) => !s.kinyarwandaText?.trim())
+            ? 'Add Kinyarwanda to every sentence'
+            : 'Save all sentences'}
       </StoryButton>
     </StoryShell>
   );

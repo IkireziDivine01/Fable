@@ -15,6 +15,7 @@ import StoryShell, {
 } from '@/components/story/StoryShell';
 import { SYSTEM_THEME_NAMES } from '@/lib/themes';
 import { buildSentencesFromTranscript } from '@/lib/storyHelpers';
+import { ensureKinyarwandaOnSentences } from '@/lib/ensureKinyarwanda';
 
 export default function ParentAddStoryPage() {
   const router = useRouter();
@@ -38,7 +39,7 @@ export default function ParentAddStoryPage() {
     setError('');
 
     try {
-      const sentences = buildSentencesFromTranscript(transcript, selectedThemes);
+      let sentences = buildSentencesFromTranscript(transcript, selectedThemes);
       if (sentences.length < 3) {
         throw new Error('Write at least 3 sentences in your transcript.');
       }
@@ -46,6 +47,8 @@ export default function ParentAddStoryPage() {
       if (!source.trim()) {
         throw new Error('Please cite where this story comes from.');
       }
+
+      sentences = await ensureKinyarwandaOnSentences(sentences);
 
       const response = await fetch('/api/stories', {
         method: 'POST',
@@ -100,8 +103,8 @@ export default function ParentAddStoryPage() {
           <StoryEyebrow>Manual entry</StoryEyebrow>
           <StoryTitle>Add a story to your library</StoryTitle>
           <StoryLead>
-            Paste or type the full text, cite where it comes from, and optionally publish it straight
-            to your learners&apos; library.
+            Paste or type the full text and cite where it comes from. We translate each line to
+            Kinyarwanda automatically so learners can switch languages.
           </StoryLead>
 
           <label className="mb-4 block">
@@ -186,7 +189,11 @@ export default function ParentAddStoryPage() {
 
           {error && <StoryAlert message={error} />}
           <StoryButton type="submit" disabled={loading} className="w-full">
-            {loading ? 'Adding story…' : publishNow ? 'Add & publish' : 'Save draft'}
+            {loading
+              ? 'Translating & adding…'
+              : publishNow
+                ? 'Add & publish'
+                : 'Save draft'}
           </StoryButton>
         </form>
       </StoryPanel>
