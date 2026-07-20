@@ -39,7 +39,8 @@ export interface StorySentenceInput {
   sentenceOrder: number;
   /** Character name speaking this line — must match a character in the story */
   speaker?: string;
-  kinyarwandaText?: string;
+  /** Required Ikinyarwanda translation of this sentence */
+  kinyarwandaText: string;
   themeLabel?: string;
   elderTalkingPoints?: string;
   childPrompt?: string;
@@ -114,7 +115,40 @@ export function buildSentencesFromTranscript(
     sentenceText: text,
     sentenceOrder: index,
     themeLabel: defaultTheme,
+    kinyarwandaText: '',
   }));
+}
+
+/** Every story line must include a non-empty Kinyarwanda (Ikinyarwanda) translation. */
+export function assertSentencesHaveKinyarwanda(
+  sentences: Array<{
+    sentenceText?: string;
+    kinyarwandaText?: string | null;
+    kinyarwanda_text?: string | null;
+    sentence_text?: string;
+  }>
+): void {
+  if (!sentences.length) {
+    throw new Error('At least one sentence is required.');
+  }
+
+  const missing: number[] = [];
+  sentences.forEach((sentence, index) => {
+    const rw = String(
+      sentence.kinyarwandaText ?? sentence.kinyarwanda_text ?? ''
+    ).trim();
+    if (!rw) missing.push(index + 1);
+  });
+
+  if (missing.length > 0) {
+    const list =
+      missing.length <= 5
+        ? missing.join(', ')
+        : `${missing.slice(0, 5).join(', ')}…`;
+    throw new Error(
+      `Kinyarwanda is required for every sentence. Missing on sentence${missing.length === 1 ? '' : 's'} ${list}.`
+    );
+  }
 }
 
 export function validateGeneratedStory(data: unknown): GeneratedStoryPayload {
@@ -137,6 +171,9 @@ export function validateGeneratedStory(data: unknown): GeneratedStoryPayload {
       const sentenceText = String(
         row.text ?? row.sentenceText ?? row.sentence_text ?? ''
       ).trim();
+      const kinyarwandaText = String(
+        row.kinyarwandaText ?? row.kinyarwanda_text ?? ''
+      ).trim();
       return {
         sentenceText,
         sentenceOrder:
@@ -146,11 +183,7 @@ export function validateGeneratedStory(data: unknown): GeneratedStoryPayload {
               ? row.sentence_order
               : index,
         themeLabel: String(row.theme ?? row.themeLabel ?? row.theme_label ?? themes[0] ?? 'Ubuntu'),
-        kinyarwandaText: row.kinyarwandaText
-          ? String(row.kinyarwandaText)
-          : row.kinyarwanda_text
-            ? String(row.kinyarwanda_text)
-            : undefined,
+        kinyarwandaText,
         elderTalkingPoints: row.elderTalkingPoints
           ? String(row.elderTalkingPoints)
           : row.elder_talking_points
@@ -170,6 +203,7 @@ export function validateGeneratedStory(data: unknown): GeneratedStoryPayload {
 
   if (!title) throw new Error('Story title is required.');
   if (sentences.length < 3) throw new Error('Story must have at least 3 sentences.');
+  assertSentencesHaveKinyarwanda(sentences);
 
   const normalizedThemes = themes.filter((t) =>
     SYSTEM_THEME_NAMES.includes(t as SystemThemeName)

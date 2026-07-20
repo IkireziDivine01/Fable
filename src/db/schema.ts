@@ -309,8 +309,8 @@ export const storySentenceSchema: RxJsonSchema<StorySentence> = {
       maximum: 1000000,
     }, // 0, 1, 2... for reading order
 
-    // Kinyarwanda translation/etymology
-    kinyarwandaText: { type: 'string', maxLength: 5000 }, // Optional translation
+    // Kinyarwanda translation — required for every sentence going forward
+    kinyarwandaText: { type: 'string', maxLength: 5000 },
     etymologyNote: { type: 'string', maxLength: 2000 }, // Cultural/linguistic note
 
     // Theme tagging (triggers Guarded Gateway)

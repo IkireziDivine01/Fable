@@ -66,6 +66,14 @@ export default function KidStoryReaderPage() {
     async function load() {
       try {
         const response = await fetch(`/api/stories/${storyId}/immersive`);
+        const contentType = response.headers.get('content-type') ?? '';
+        if (!contentType.includes('application/json')) {
+          throw new Error(
+            response.status === 404
+              ? 'Story API unavailable — restart the dev server and try again'
+              : `Story unavailable (${response.status})`
+          );
+        }
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || 'Story unavailable');
 

@@ -469,11 +469,15 @@ const STORY_TOOL = {
               description:
                 'Name of the character speaking this sentence — must exactly match one of characters[].name',
             },
-            kinyarwandaText: { type: 'string' },
+            kinyarwandaText: {
+              type: 'string',
+              description:
+                'Full Kinyarwanda (Ikinyarwanda) translation of this sentence — required, not optional',
+            },
             elderTalkingPoints: { type: 'string' },
             childPrompt: { type: 'string' },
           },
-          required: ['text', 'theme', 'speaker'],
+          required: ['text', 'theme', 'speaker', 'kinyarwandaText'],
         },
       },
     },
@@ -633,6 +637,7 @@ Rules:
 - Include at least 5 sentences
 - Weave in Rwandan cultural values
 - Assign each sentence one theme from Ubuntu, Ubwiyunge, or Umuganda
+- EVERY sentence MUST include kinyarwandaText: a full, natural Ikinyarwanda translation of that sentence (not a gloss or single word)
 - Include childPrompt and elderTalkingPoints on some sentences when meaningful
 - Choose the nearest environment biome for rendering, then make environmentDescription and sceneBrief uniquely match THIS prompt — names in characters must appear in the narrative
 - environmentDescription must paint THIS story’s specific place (not a reusable village/hills template)
@@ -656,6 +661,7 @@ Rules:
 - Expand the two seed sentences into a complete story with at least 5 sentences total
 - Keep the tone warm and intergenerational
 - Tag each sentence with Ubuntu, Ubwiyunge, or Umuganda
+- EVERY sentence MUST include kinyarwandaText: a full, natural Ikinyarwanda translation of that sentence
 - Derive the nearest environment biome, a prompt-specific environmentDescription, sceneBrief, and characters from the finished story
 - Character names must match who appears in the narrative
 ${SCENE_BRIEF_RULES}

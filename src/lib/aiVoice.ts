@@ -1,80 +1,57 @@
-/** Story narration TTS — Mateza for Kinyarwanda, browser speechSynthesis as fallback */
+/** Story narration TTS — ElevenLabs (English), Proto (Kinyarwanda). */
+
+import type { RhubarbViseme, CharacterType, PersonalityPose } from '@/lib/immersive/types';
+import { nextTtsViseme } from '@/lib/immersive/lipSync';
 
 export type AiVoiceName = 'grandma' | 'parent' | 'teacher';
-export type TtsEngine = 'mateza' | 'browser';
-export type MatezaTtsVoice = 'default' | 'male' | 'female';
+export type TtsEngine = 'proto' | 'elevenlabs' | 'gemini';
 
-const VOICE_PREFS: Record<AiVoiceName, { pitch: number; rate: number }> = {
-  grandma: { pitch: 0.85, rate: 0.88 },
-  parent: { pitch: 1, rate: 0.92 },
-  teacher: { pitch: 0.95, rate: 0.9 },
+/** Don't hang the player waiting forever on network TTS. */
+const TTS_FETCH_TIMEOUT_MS = 30_000;
+
+function aiVoiceNameForCharacter(characterType?: CharacterType | string): AiVoiceName {
+  if (characterType === 'teacher') return 'teacher';
+  if (characterType === 'grandma' || characterType === 'grandpa') return 'grandma';
+  return 'parent';
+}
+
+type TtsPlaybackControls = {
+  stop: () => void;
+  pause: () => void;
+  resume: () => Promise<void>;
 };
-
-/** Map story voice personas onto Mateza TTS voices. */
-function matezaVoiceFor(name?: AiVoiceName): MatezaTtsVoice {
-  if (name === 'teacher') return 'male';
-  return 'female';
-}
-
-function pickVoice(name: AiVoiceName): SpeechSynthesisVoice | null {
-  if (typeof window === 'undefined' || !window.speechSynthesis) return null;
-  const voices = window.speechSynthesis.getVoices();
-  const prefer =
-    name === 'grandma'
-      ? voices.find((v) => /female|samantha|karen|victoria/i.test(v.name))
-      : voices.find((v) => /en/i.test(v.lang));
-  return prefer ?? voices.find((v) => v.lang.startsWith('en')) ?? voices[0] ?? null;
-}
-
-/** Browser text-to-speech (accent/pronunciation is weak for Kinyarwanda) */
-export function speakText(
-  text: string,
-  options?: { voice?: AiVoiceName; lang?: string; onEnd?: () => void; onStart?: () => void }
-): () => void {
-  if (typeof window === 'undefined' || !window.speechSynthesis) {
-    options?.onEnd?.();
-    return () => undefined;
-  }
-
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  const prefs = VOICE_PREFS[options?.voice ?? 'parent'];
-  utterance.pitch = prefs.pitch;
-  utterance.rate = prefs.rate;
-  utterance.lang = options?.lang ?? 'en-US';
-
-  const voices = window.speechSynthesis.getVoices();
-  const langPrefix = utterance.lang.split('-')[0];
-  const voice =
-    pickVoice(options?.voice ?? 'parent') ??
-    voices.find((v) => v.lang.startsWith(langPrefix)) ??
-    voices.find((v) => v.lang.startsWith('en')) ??
-    voices[0] ??
-    null;
-  if (voice) utterance.voice = voice;
-
-  utterance.onstart = () => options?.onStart?.();
-  utterance.onend = () => options?.onEnd?.();
-  utterance.onerror = () => options?.onEnd?.();
-
-  window.speechSynthesis.speak(utterance);
-  return () => window.speechSynthesis.cancel();
-}
 
 type SpeakOptions = {
   voice?: AiVoiceName;
+  lang?: string;
+  characterType?: CharacterType;
+  personalityPose?: PersonalityPose;
+  /** TTS backend for /api/tts. Defaults by language when omitted. */
+  provider?: TtsEngine;
   onEnd?: () => void;
   onStart?: () => void;
   /** Called immediately with a stop fn so callers can cancel during fetch latency. */
   registerStop?: (stop: () => void) => void;
+  /** Pause/resume once audio is ready (no-ops until then). */
+  registerPlaybackControls?: (controls: TtsPlaybackControls) => void;
 };
 
-type MatezaSpeakResult =
+type ApiSpeakResult =
   | { status: 'playing'; stop: () => void }
   | { status: 'cancelled' }
   | { status: 'error'; message?: string };
 
+function isKinyarwandaLang(lang?: string): boolean {
+  return Boolean(lang && lang.toLowerCase().startsWith('rw'));
+}
+
+/** Resolve provider: Proto for Kinyarwanda, ElevenLabs for English. */
+export function ttsProviderForLang(lang?: string): TtsEngine {
+  return isKinyarwandaLang(lang) ? 'proto' : 'elevenlabs';
+}
+
 let sharedAudioCtx: AudioContext | null = null;
+let apiFlight: Promise<ApiSpeakResult> | null = null;
 
 async function ensureAudioUnlocked(): Promise<void> {
   if (typeof window === 'undefined') return;
@@ -91,22 +68,21 @@ async function ensureAudioUnlocked(): Promise<void> {
   }
 }
 
-/**
- * Mateza Kinyarwanda TTS via /api/tts.
- */
-async function speakWithMateza(
+async function speakWithApiTts(
   text: string,
   options?: SpeakOptions
-): Promise<MatezaSpeakResult> {
+): Promise<ApiSpeakResult> {
   if (typeof window === 'undefined') return { status: 'error', message: 'No window' };
 
   const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), TTS_FETCH_TIMEOUT_MS);
   let audio: HTMLAudioElement | null = null;
   let objectUrl: string | null = null;
   let settled = false;
   let cancelled = false;
 
   const cleanup = () => {
+    window.clearTimeout(timeoutId);
     controller.abort();
     if (audio) {
       audio.onended = null;
@@ -129,7 +105,17 @@ async function speakWithMateza(
     cleanup();
   };
 
+  const pause = () => {
+    if (audio && !audio.paused) audio.pause();
+  };
+
+  const resume = async () => {
+    if (!audio || cancelled || settled) return;
+    if (audio.paused) await audio.play();
+  };
+
   options?.registerStop?.(stop);
+  options?.registerPlaybackControls?.({ stop, pause, resume });
 
   const finish = () => {
     if (settled) return;
@@ -139,12 +125,16 @@ async function speakWithMateza(
   };
 
   try {
+    const provider = options?.provider ?? ttsProviderForLang(options?.lang);
     const response = await fetch('/api/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         text,
-        voice: matezaVoiceFor(options?.voice),
+        lang: options?.lang,
+        characterType: options?.characterType,
+        personalityPose: options?.personalityPose,
+        provider,
       }),
       signal: controller.signal,
     });
@@ -154,15 +144,18 @@ async function speakWithMateza(
     if (!response.ok) {
       const payload = (await response.json().catch(() => null)) as { error?: string } | null;
       cleanup();
-      return { status: 'error', message: payload?.error || `TTS failed (${response.status})` };
+      return {
+        status: 'error',
+        message: payload?.error || `TTS failed (${response.status})`,
+      };
     }
 
-    const mimeType = response.headers.get('content-type')?.split(';')[0]?.trim() || 'audio/wav';
+    const mimeType = response.headers.get('content-type')?.split(';')[0]?.trim() || 'audio/mpeg';
     const bytes = await response.arrayBuffer();
     if (cancelled) return { status: 'cancelled' };
     if (!bytes.byteLength) {
       cleanup();
-      return { status: 'error', message: 'Empty audio from Mateza' };
+      return { status: 'error', message: 'Empty audio from TTS' };
     }
 
     const blob = new Blob([bytes], { type: mimeType });
@@ -179,7 +172,6 @@ async function speakWithMateza(
     try {
       await audio.play();
     } catch {
-      // Autoplay can still block after a long fetch — retry once after unlock.
       await ensureAudioUnlocked();
       if (cancelled) return { status: 'cancelled' };
       await audio.play();
@@ -193,19 +185,37 @@ async function speakWithMateza(
     return { status: 'playing', stop };
   } catch (error) {
     if (cancelled || (error instanceof DOMException && error.name === 'AbortError')) {
+      if (!cancelled) {
+        cleanup();
+        return { status: 'error', message: 'TTS timed out — try again shortly.' };
+      }
       return { status: 'cancelled' };
     }
     cleanup();
     return {
       status: 'error',
-      message: error instanceof Error ? error.message : 'Mateza playback failed',
+      message: error instanceof Error ? error.message : 'TTS playback failed',
     };
   }
 }
 
+async function speakWithApiSingleFlight(
+  text: string,
+  options?: SpeakOptions
+): Promise<ApiSpeakResult> {
+  if (apiFlight) {
+    return { status: 'error', message: 'Another TTS request is already in progress.' };
+  }
+  const flight = speakWithApiTts(text, options).finally(() => {
+    if (apiFlight === flight) apiFlight = null;
+  });
+  apiFlight = flight;
+  return flight;
+}
+
 /**
- * Speak narration. Defaults to Mateza for Kinyarwanda (`rw*`), browser otherwise.
- * Mateza failures fall back to browser speechSynthesis unless cancelled.
+ * Speak narration via ElevenLabs (English) or Proto (Kinyarwanda).
+ * No browser speechSynthesis fallback.
  */
 export async function speakNarration(
   text: string,
@@ -213,29 +223,29 @@ export async function speakNarration(
     engine?: TtsEngine;
     voice?: AiVoiceName;
     lang?: string;
+    characterType?: CharacterType;
+    personalityPose?: PersonalityPose;
   }
 ): Promise<() => void> {
-  const lang = options?.lang ?? 'en-US';
-  const preferMateza =
-    options?.engine === 'mateza' ||
-    (options?.engine !== 'browser' && lang.toLowerCase().startsWith('rw'));
+  const voice = options?.voice ?? aiVoiceNameForCharacter(options?.characterType);
+  const provider = options?.engine ?? options?.provider ?? ttsProviderForLang(options?.lang);
 
-  if (preferMateza) {
-    const result = await speakWithMateza(text, options);
-    if (result.status === 'playing') return result.stop;
-    if (result.status === 'cancelled') return () => undefined;
-    if (result.message) {
-      console.warn('[tts] Mateza failed, falling back to browser voice:', result.message);
-    }
+  const result = await speakWithApiSingleFlight(text, {
+    ...options,
+    voice,
+    provider,
+  });
+
+  if (result.status === 'playing') return result.stop;
+  if (result.status === 'cancelled') return () => undefined;
+
+  if (result.message) {
+    console.warn('[tts] API TTS failed:', result.message);
   }
 
-  const browserStop = speakText(text, options);
-  options?.registerStop?.(browserStop);
-  return browserStop;
+  options?.onEnd?.();
+  return () => undefined;
 }
-
-import type { RhubarbViseme } from '@/lib/immersive/types';
-import { nextTtsViseme } from '@/lib/immersive/lipSync';
 
 /** Drive lip-sync while TTS is active (no audio analyser available) */
 export function runTtsLipSync(
@@ -258,19 +268,10 @@ export function runTtsLipSync(
   };
 }
 
-export function preloadVoices(): void {
-  if (typeof window === 'undefined') return;
-  window.speechSynthesis?.getVoices();
-  window.speechSynthesis?.addEventListener('voiceschanged', () => {
-    window.speechSynthesis.getVoices();
-  });
-}
-
 /** Unlock audio during a user gesture so playback and TTS are allowed */
 export async function unlockAudioPlayback(): Promise<void> {
   if (typeof window === 'undefined') return;
 
-  preloadVoices();
   await ensureAudioUnlocked();
 
   if (!sharedAudioCtx) return;

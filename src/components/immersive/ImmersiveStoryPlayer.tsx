@@ -3,13 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { ArrowLeft, MessageCircleQuestion, Volume2, VolumeX, ZoomIn, ZoomOut } from 'lucide-react';
+import { ArrowLeft, MessageCircleQuestion, Pause, Play, Volume2, VolumeX, ZoomIn, ZoomOut } from 'lucide-react';
 import {
-  preloadVoices,
   runTtsLipSync,
   speakNarration,
+  ttsProviderForLang,
   unlockAudioPlayback,
-  type TtsEngine,
 } from '@/lib/aiVoice';
 import { createAmbientSoundscape } from '@/lib/immersive/ambientSound';
 import {
@@ -120,9 +119,15 @@ export default function ImmersiveStoryPlayer({
   const setWrongTapPropType = useImmersiveStore((s) => s.setWrongTapPropType);
   const setHintPropType = useImmersiveStore((s) => s.setHintPropType);
   const setActiveHotspot = useImmersiveStore((s) => s.setActiveHotspot);
+  const setActiveWordSpark = useImmersiveStore((s) => s.setActiveWordSpark);
+  const setOnWordSparkOpen = useImmersiveStore((s) => s.setOnWordSparkOpen);
+  const setWordSparkVocabHints = useImmersiveStore((s) => s.setWordSparkVocabHints);
   const setOnEngagementPropSelect = useImmersiveStore((s) => s.setOnEngagementPropSelect);
   const setSentenceCount = useImmersiveStore((s) => s.setSentenceCount);
   const setOnDialogueAdvance = useImmersiveStore((s) => s.setOnDialogueAdvance);
+  const setOnPlaybackPauseToggle = useImmersiveStore((s) => s.setOnPlaybackPauseToggle);
+  const setUserPaused = useImmersiveStore((s) => s.setUserPaused);
+  const userPaused = useImmersiveStore((s) => s.userPaused);
   const resetEngagement = useImmersiveStore((s) => s.resetEngagement);
   const weather = useActiveWeather();
   const timeOfDay = useActiveTimeOfDay();
@@ -133,7 +138,6 @@ export default function ImmersiveStoryPlayer({
   );
   const [started, setStarted] = useState(false);
   const [askOpen, setAskOpen] = useState(false);
-  const [ttsEngine, setTtsEngine] = useState<TtsEngine>('mateza');
   const [phase, setPhase] = useState<PackPhase>({ kind: 'idle' });
   const [huntTargetIndex, setHuntTargetIndex] = useState(0);
   const [vocabPairIndex, setVocabPairIndex] = useState(0);
@@ -142,14 +146,22 @@ export default function ImmersiveStoryPlayer({
   const [celebration, setCelebration] = useState<string | null>(null);
   const [softMiss, setSoftMiss] = useState<string | null>(null);
   const [busyTap, setBusyTap] = useState(false);
+  /** Session cache for on-demand Kinyarwanda when sentences lack kinyarwanda_text */
+  const [rwOverrides, setRwOverrides] = useState<Record<string, string>>({});
+  const [rwTranslating, setRwTranslating] = useState(false);
   const completionLoggedRef = useRef(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const rafRef = useRef<number | null>(null);
   const stopTtsRef = useRef<(() => void) | null>(null);
+  const ttsPauseResumeRef = useRef<{
+    pause: () => void;
+    resume: () => Promise<void>;
+  } | null>(null);
   const stopLipSyncRef = useRef<(() => void) | null>(null);
   const advancingRef = useRef(false);
   const ttsActiveRef = useRef(false);
+  const userPausedRef = useRef(false);
   const lipSyncTimingsRef = useRef<ReturnType<typeof buildMouthSyncTimings>>([]);
   const ambientRef = useRef<ReturnType<typeof createAmbientSoundscape> | null>(null);
   const predictShownRef = useRef(false);
@@ -181,9 +193,35 @@ export default function ImmersiveStoryPlayer({
     });
   }, [engagementActivities]);
 
+  const vocabHints = useMemo(
+    () =>
+      postActivities.flatMap((activity) =>
+        activity.type === 'vocab_match' ? activity.pairs : []
+      ),
+    [postActivities]
+  );
+
+  useEffect(() => {
+    setWordSparkVocabHints(vocabHints);
+  }, [setWordSparkVocabHints, vocabHints]);
+
   const current = sentences[sentenceIndex];
   const total = sentences.length;
-  const hasKinyarwanda = sentences.some((s) => Boolean(s.kinyarwanda_text?.trim()));
+
+  const resolveRwText = useCallback(
+    (sentence: KidSentence | undefined) => {
+      if (!sentence) return '';
+      const saved =
+        sentence.kinyarwanda_text ??
+        (sentence as { kinyarwandaText?: string | null }).kinyarwandaText ??
+        '';
+      if (saved.trim()) return saved.trim();
+      return (rwOverrides[sentence.id] ?? '').trim();
+    },
+    [rwOverrides]
+  );
+
+  // Always offer EN/RW — narration falls back to English when a line has no RW text.
   const keepScene =
     phase.kind === 'predict' ||
     phase.kind === 'choose' ||
@@ -217,7 +255,45 @@ export default function ImmersiveStoryPlayer({
   }, [postActivities, resetEngagement]);
 
   useEffect(() => {
-    preloadVoices();
+    // Fresh entry into a story always starts at line 1 (Continue / Read again).
+    init({
+      storyId,
+      environment,
+      characters: slots,
+      sceneSpec,
+      sceneBrief,
+      sceneEvents: resolvedSceneEvents,
+      hotspots,
+      isImmersive: true,
+      useAiVoice,
+    });
+    setSentenceIndex(0);
+    setCurrentLine('', '');
+    setSentenceCount(sentences.length);
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = window.sessionStorage.getItem(`fable:lang:${storyId}`);
+        if (saved === 'en' || saved === 'rw') {
+          setDisplayLanguage(saved);
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    return () => {
+      cleanupPlayback();
+      ambientRef.current?.stop();
+      ambientRef.current = null;
+      resetEngagement();
+      setOnDialogueAdvance(null);
+      setOnPlaybackPauseToggle(null);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storyId]);
+
+  // World/scene updates for the active story — do not wipe dialogue or sentence progress.
+  useEffect(() => {
+    if (!storyId) return;
     init({
       storyId,
       environment,
@@ -230,15 +306,8 @@ export default function ImmersiveStoryPlayer({
       useAiVoice,
     });
     setSentenceCount(sentences.length);
-    return () => {
-      cleanupPlayback();
-      ambientRef.current?.stop();
-      ambientRef.current = null;
-      resetEngagement();
-      setOnDialogueAdvance(null);
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storyId, environment, sceneSpec, sceneBrief, resolvedSceneEvents, hotspots, useAiVoice]);
+  }, [environment, sceneSpec, sceneBrief, resolvedSceneEvents, hotspots, useAiVoice]);
 
   useEffect(() => {
     setSentenceCount(sentences.length);
@@ -268,6 +337,7 @@ export default function ImmersiveStoryPlayer({
     ttsActiveRef.current = false;
     stopTtsRef.current?.();
     stopTtsRef.current = null;
+    ttsPauseResumeRef.current = null;
     stopLipSyncRef.current?.();
     stopLipSyncRef.current = null;
     if (audioRef.current) {
@@ -279,7 +349,9 @@ export default function ImmersiveStoryPlayer({
     lipSyncTimingsRef.current = [];
     setMouthViseme('X');
     setPlaying(false);
-  }, [setMouthViseme, setPlaying]);
+    userPausedRef.current = false;
+    setUserPaused(false);
+  }, [setMouthViseme, setPlaying, setUserPaused]);
 
   const persistCompletion = useCallback(async () => {
     if (completionLoggedRef.current) {
@@ -366,6 +438,29 @@ export default function ImmersiveStoryPlayer({
     setOnDialogueAdvance(advanceSentence);
     return () => setOnDialogueAdvance(null);
   }, [advanceSentence, completed, setOnDialogueAdvance, started]);
+
+  useEffect(() => {
+    if (completed || !started) {
+      setOnWordSparkOpen(null);
+      return;
+    }
+    const open = () => {
+      cleanupPlayback();
+      // Keep the story paused while Keza’s card is open
+      userPausedRef.current = true;
+      setUserPaused(true);
+      setActiveHotspot(null);
+    };
+    setOnWordSparkOpen(open);
+    return () => setOnWordSparkOpen(null);
+  }, [
+    cleanupPlayback,
+    completed,
+    setActiveHotspot,
+    setOnWordSparkOpen,
+    setUserPaused,
+    started,
+  ]);
 
   const handlePredictAnswer = useCallback(
     (choiceId: string, correct: boolean) => {
@@ -606,6 +701,8 @@ export default function ImmersiveStoryPlayer({
 
       audio.onended = () => {
         setMouthViseme('X');
+        if (userPausedRef.current) return;
+        if (useImmersiveStore.getState().activeWordSpark) return;
         advanceSentence();
       };
 
@@ -627,14 +724,63 @@ export default function ImmersiveStoryPlayer({
     tickRecordedLipSync,
   ]);
 
+  // Fill missing Kinyarwanda when the kid switches language (older stories often lack it).
+  useEffect(() => {
+    if (displayLanguage !== 'rw' || sentences.length === 0) return;
+
+    const missing = sentences.filter((s) => {
+      const saved = (s.kinyarwanda_text ?? '').trim();
+      return !saved && !rwOverrides[s.id]?.trim() && Boolean(s.sentence_text?.trim());
+    });
+    if (missing.length === 0) return;
+
+    let cancelled = false;
+    setRwTranslating(true);
+
+    void (async () => {
+      try {
+        const res = await fetch('/api/translate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            texts: missing.map((s) => s.sentence_text),
+            target: 'rw',
+          }),
+        });
+        const data = (await res.json()) as { translations?: string[]; error?: string };
+        if (!res.ok || cancelled) return;
+        const translations = data.translations ?? [];
+        setRwOverrides((prev) => {
+          const next = { ...prev };
+          missing.forEach((s, i) => {
+            const rw = translations[i]?.trim();
+            if (rw) next[s.id] = rw;
+          });
+          return next;
+        });
+      } catch (err) {
+        console.warn('Kinyarwanda translation failed:', err);
+      } finally {
+        if (!cancelled) setRwTranslating(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // Only re-run when language flips or the sentence set changes — not on every override write.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayLanguage, sentences]);
+
   const narrationText = useCallback(
     (lang: DisplayLanguage) => {
-      if (lang === 'rw' && current?.kinyarwanda_text?.trim()) {
-        return current.kinyarwanda_text.trim();
+      if (lang === 'rw') {
+        const rw = resolveRwText(current);
+        if (rw) return rw;
       }
       return current?.sentence_text ?? '';
     },
-    [current?.kinyarwanda_text, current?.sentence_text]
+    [current, resolveRwText]
   );
 
   const playTts = useCallback(async () => {
@@ -646,17 +792,32 @@ export default function ImmersiveStoryPlayer({
     stopLipSyncRef.current = runTtsLipSync(setMouthViseme, () => ttsActiveRef.current);
 
     const lang = displayLanguage === 'rw' ? 'rw-RW' : 'en-US';
-    const engine: TtsEngine = displayLanguage === 'rw' ? ttsEngine : 'browser';
+    // ElevenLabs for English; Proto for Kinyarwanda.
+    const engine = ttsProviderForLang(lang);
+
+    const speakerIndex = resolveActiveCharacterIndex(current, slots, sentenceIndex);
+    const speaker = slots[speakerIndex] ?? slots[0];
 
     stopTtsRef.current = await speakNarration(text, {
       engine,
-      voice: 'grandma',
+      characterType: speaker?.type ?? 'grandma',
+      personalityPose: speaker?.appearance?.personalityPose,
       lang,
       registerStop: (stop) => {
         stopTtsRef.current = stop;
       },
+      registerPlaybackControls: (controls) => {
+        stopTtsRef.current = controls.stop;
+        ttsPauseResumeRef.current = {
+          pause: controls.pause,
+          resume: controls.resume,
+        };
+      },
       onEnd: () => {
         ttsActiveRef.current = false;
+        ttsPauseResumeRef.current = null;
+        if (userPausedRef.current) return;
+        if (useImmersiveStore.getState().activeWordSpark) return;
         advanceSentence();
       },
       onStart: () => setPlaying(true),
@@ -664,17 +825,20 @@ export default function ImmersiveStoryPlayer({
     return true;
   }, [
     advanceSentence,
+    current,
     displayLanguage,
     narrationText,
+    sentenceIndex,
     setMouthViseme,
     setPlaying,
-    ttsEngine,
+    slots,
   ]);
 
   const playCurrentSentence = useCallback(async () => {
     if (!current) return;
 
-    const wantsKinyarwanda = displayLanguage === 'rw' && Boolean(current.kinyarwanda_text?.trim());
+    const wantsKinyarwanda =
+      displayLanguage === 'rw' && Boolean(resolveRwText(current));
 
     if (!wantsKinyarwanda && current.audio_url) {
       const ok = await playRecorded();
@@ -687,7 +851,11 @@ export default function ImmersiveStoryPlayer({
     setPlaying(true);
     const text = narrationText(displayLanguage);
     const duration = Math.max(3500, (text.length || 20) * 55);
-    setTimeout(advanceSentence, duration);
+    setTimeout(() => {
+      if (userPausedRef.current) return;
+      if (useImmersiveStore.getState().activeWordSpark) return;
+      advanceSentence();
+    }, duration);
   }, [
     advanceSentence,
     current,
@@ -695,25 +863,52 @@ export default function ImmersiveStoryPlayer({
     narrationText,
     playRecorded,
     playTts,
+    resolveRwText,
     setPlaying,
   ]);
 
   const playCurrentSentenceRef = useRef(playCurrentSentence);
   playCurrentSentenceRef.current = playCurrentSentence;
 
+  // Keep dialogue text in the store whenever the active sentence changes.
+  // Separate from audio so init/re-render races cannot blank the HUD.
   useEffect(() => {
-    if (!started || !current || completed || phase.kind === 'predict') return;
-
+    if (!started || !current || completed) return;
+    const en = current.sentence_text ?? '';
+    const rw = resolveRwText(current);
+    setCurrentLine(en, rw || undefined);
     const charIndex = resolveActiveCharacterIndex(current, slots, sentenceIndex);
     setActiveCharacterIndex(charIndex);
-    setCurrentLine(current.sentence_text, current.kinyarwanda_text ?? undefined);
+  }, [
+    completed,
+    current,
+    resolveRwText,
+    sentenceIndex,
+    setActiveCharacterIndex,
+    setCurrentLine,
+    slots,
+    started,
+  ]);
+
+  useEffect(() => {
+    if (!started || !current || completed || phase.kind === 'predict') return;
+    if (userPausedRef.current) return;
+    if (useImmersiveStore.getState().activeWordSpark) return;
+    // Wait for on-demand RW translation before speaking in Kinyarwanda
+    if (
+      displayLanguage === 'rw' &&
+      rwTranslating &&
+      !resolveRwText(current)
+    ) {
+      return;
+    }
 
     let cancelled = false;
 
     const run = async () => {
       cleanupPlayback();
-      if (cancelled) return;
-      // Use a ref so unstable callback identity does not abort in-flight Mateza audio.
+      if (cancelled || userPausedRef.current) return;
+      if (useImmersiveStore.getState().activeWordSpark) return;
       await playCurrentSentenceRef.current();
     };
 
@@ -722,40 +917,166 @@ export default function ImmersiveStoryPlayer({
       cancelled = true;
       cleanupPlayback();
     };
-    // Restart only when the spoken line / voice engine actually changes.
   }, [
     cleanupPlayback,
     completed,
     current?.id,
-    current?.kinyarwanda_text,
-    current?.sentence_text,
     displayLanguage,
     phase.kind,
+    resolveRwText,
+    rwTranslating,
     sentenceIndex,
-    setActiveCharacterIndex,
-    setCurrentLine,
-    slots.length,
     started,
-    ttsEngine,
   ]);
 
   const handleStart = async () => {
     await unlockAudioPlayback();
+    const line = sentences[sentenceIndex] ?? sentences[0];
+    if (line) {
+      setCurrentLine(line.sentence_text ?? '', resolveRwText(line) || undefined);
+    }
     setStarted(true);
   };
 
+  const handleTogglePause = useCallback(async () => {
+    if (!started || completed || phase.kind === 'predict') return;
+
+    if (userPausedRef.current) {
+      userPausedRef.current = false;
+      setUserPaused(false);
+      await unlockAudioPlayback();
+
+      const audio = audioRef.current;
+      if (
+        audio &&
+        audio.src &&
+        audio.paused &&
+        audio.currentTime > 0 &&
+        !audio.ended
+      ) {
+        setPlaying(true);
+        try {
+          await audio.play();
+          rafRef.current = requestAnimationFrame(tickRecordedLipSync);
+        } catch {
+          await playCurrentSentenceRef.current();
+        }
+        return;
+      }
+
+      await playCurrentSentenceRef.current();
+      return;
+    }
+
+    const audio = audioRef.current;
+    const recordedPlaying = Boolean(audio && audio.src && !audio.paused);
+    const ttsBusy = Boolean(stopTtsRef.current || ttsPauseResumeRef.current);
+
+    if (!recordedPlaying && !ttsBusy) {
+      return;
+    }
+
+    userPausedRef.current = true;
+    setUserPaused(true);
+
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    stopLipSyncRef.current?.();
+    stopLipSyncRef.current = null;
+    ttsActiveRef.current = false;
+
+    if (recordedPlaying && audio) {
+      audio.pause();
+    } else {
+      // TTS: stop cleanly; resume replays the current line
+      stopTtsRef.current?.();
+      stopTtsRef.current = null;
+      ttsPauseResumeRef.current = null;
+    }
+
+    setMouthViseme('X');
+    setPlaying(false);
+  }, [
+    completed,
+    phase.kind,
+    setMouthViseme,
+    setPlaying,
+    setUserPaused,
+    started,
+    tickRecordedLipSync,
+  ]);
+
+  useEffect(() => {
+    if (completed || !started || phase.kind === 'predict') {
+      setOnPlaybackPauseToggle(null);
+      return;
+    }
+    setOnPlaybackPauseToggle(() => {
+      void handleTogglePause();
+    });
+    return () => setOnPlaybackPauseToggle(null);
+  }, [
+    completed,
+    handleTogglePause,
+    phase.kind,
+    setOnPlaybackPauseToggle,
+    started,
+  ]);
+
   const handleLanguageChange = (lang: DisplayLanguage) => {
+    if (typeof window !== 'undefined') {
+      try {
+        window.sessionStorage.setItem(`fable:lang:${storyId}`, lang);
+      } catch {
+        /* ignore quota / private mode */
+      }
+    }
+    setActiveWordSpark(null);
     setDisplayLanguage(lang);
   };
 
   const openAskSheet = () => {
     cleanupPlayback();
+    setActiveWordSpark(null);
     setAskOpen(true);
   };
 
   const closeAskSheet = () => {
     setAskOpen(false);
   };
+
+  const languageToggle = (
+    <div
+      className="flex shrink-0 rounded-full bg-[#520e33]/80 p-0.5"
+      role="group"
+      aria-label="Story language"
+    >
+      <button
+        type="button"
+        onClick={() => handleLanguageChange('en')}
+        className={`rounded-full px-3 py-1 text-xs font-medium tracking-wide transition ${
+          displayLanguage === 'en'
+            ? 'bg-[#FF7956] text-white'
+            : 'text-[#ffdbd2]/80 hover:text-[#ffdbd2]'
+        }`}
+      >
+        English
+      </button>
+      <button
+        type="button"
+        onClick={() => handleLanguageChange('rw')}
+        className={`rounded-full px-3 py-1 text-xs font-medium tracking-wide transition ${
+          displayLanguage === 'rw'
+            ? 'bg-[#FF7956] text-white'
+            : 'text-[#ffdbd2]/80 hover:text-[#ffdbd2]'
+        }`}
+      >
+        Kinyarwanda
+      </button>
+    </div>
+  );
 
   // Final done screen (no more activities)
   if (completed && phase.kind === 'done') {
@@ -843,6 +1164,7 @@ export default function ImmersiveStoryPlayer({
           <h1 className="mb-6 max-w-lg text-center font-headline-md text-2xl text-[#fff8f5] md:text-3xl">
             {title}
           </h1>
+          <div className="mb-5">{languageToggle}</div>
           <button
             type="button"
             onClick={() => void handleStart()}
@@ -898,74 +1220,36 @@ export default function ImmersiveStoryPlayer({
       {showHud && (
         <div className="pointer-events-none absolute inset-x-0 top-0 z-10 bg-gradient-to-b from-[#1e1b18]/90 to-transparent px-4 pb-8 pt-6">
           <div className="pointer-events-auto mx-auto flex max-w-2xl flex-col gap-3">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center justify-between gap-2">
               <Link
                 href="/kid/library"
-                className="inline-flex items-center gap-1.5 rounded-lg border-2 border-[#C4A574]/50 bg-[#241810]/90 px-3 py-1.5 text-xs uppercase tracking-widest text-[#ffdbd2]"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border-2 border-[#C4A574]/50 bg-[#241810]/90 px-3 py-1.5 text-xs uppercase tracking-widest text-[#ffdbd2]"
                 style={{ fontFamily: "'Fredoka', sans-serif" }}
               >
                 <ArrowLeft size={14} strokeWidth={2.5} />
                 Library
               </Link>
 
-              {hasKinyarwanda && (
-                <div className="flex flex-col items-end gap-1.5 sm:flex-row sm:items-center">
-                  <div className="flex rounded-full bg-[#520e33]/80 p-0.5">
-                    <button
-                      type="button"
-                      onClick={() => handleLanguageChange('en')}
-                      className={`rounded-full px-3 py-1 text-xs font-medium tracking-wide transition ${
-                        displayLanguage === 'en'
-                          ? 'bg-[#FF7956] text-white'
-                          : 'text-[#ffdbd2]/80 hover:text-[#ffdbd2]'
-                      }`}
-                    >
-                      English
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleLanguageChange('rw')}
-                      className={`rounded-full px-3 py-1 text-xs font-medium tracking-wide transition ${
-                        displayLanguage === 'rw'
-                          ? 'bg-[#FF7956] text-white'
-                          : 'text-[#ffdbd2]/80 hover:text-[#ffdbd2]'
-                      }`}
-                    >
-                      Kinyarwanda
-                    </button>
-                  </div>
-                  {displayLanguage === 'rw' && (
-                    <div className="flex rounded-full bg-[#241810]/90 p-0.5 ring-1 ring-[#C4A574]/35">
-                      <button
-                        type="button"
-                        onClick={() => setTtsEngine('mateza')}
-                        className={`rounded-full px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider transition ${
-                          ttsEngine === 'mateza'
-                            ? 'bg-[#C4A574] text-[#1e1b18]'
-                            : 'text-[#ffdbd2]/80 hover:text-[#ffdbd2]'
-                        }`}
-                        title="Natural Kinyarwanda via Mateza"
-                      >
-                        Mateza
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTtsEngine('browser')}
-                        className={`rounded-full px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider transition ${
-                          ttsEngine === 'browser'
-                            ? 'bg-[#C4A574] text-[#1e1b18]'
-                            : 'text-[#ffdbd2]/80 hover:text-[#ffdbd2]'
-                        }`}
-                        title="Device speechSynthesis (weaker accent)"
-                      >
-                        Browser
-                      </button>
-                    </div>
+              <div className="flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  aria-label={userPaused ? 'Resume story' : 'Pause story'}
+                  onClick={() => void handleTogglePause()}
+                  className="flex h-8 items-center gap-1 rounded-lg border-2 border-[#FF7956]/60 bg-[#520e33]/90 px-2 text-[#ffdbd2] hover:border-[#FF7956]"
+                  title={userPaused ? 'Resume' : 'Pause'}
+                >
+                  {userPaused ? (
+                    <Play size={16} strokeWidth={2.25} fill="currentColor" />
+                  ) : (
+                    <Pause size={16} strokeWidth={2.25} fill="currentColor" />
                   )}
-                </div>
-              )}
-
-              <div className="flex items-center gap-1">
+                  <span
+                    className="hidden text-[10px] uppercase tracking-wider sm:inline"
+                    style={{ fontFamily: "'Fredoka', sans-serif" }}
+                  >
+                    {userPaused ? 'Play' : 'Pause'}
+                  </span>
+                </button>
                 <button
                   type="button"
                   aria-label="Ask a question"
@@ -1010,6 +1294,18 @@ export default function ImmersiveStoryPlayer({
                   <ZoomIn size={16} strokeWidth={2.25} />
                 </button>
               </div>
+            </div>
+
+            <div className="flex flex-col items-center gap-1.5">
+              {languageToggle}
+              {rwTranslating && displayLanguage === 'rw' && (
+                <p
+                  className="text-[10px] uppercase tracking-widest text-[#C4A574]"
+                  style={{ fontFamily: "'Fredoka', sans-serif" }}
+                >
+                  Translating to Kinyarwanda…
+                </p>
+              )}
             </div>
 
             <div className="flex items-center justify-center gap-1.5">

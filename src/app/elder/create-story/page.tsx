@@ -16,6 +16,7 @@ import StoryShell, {
 } from '@/components/story/StoryShell';
 import { SYSTEM_THEME_NAMES } from '@/lib/themes';
 import { buildSentencesFromTranscript } from '@/lib/storyHelpers';
+import { ensureKinyarwandaOnSentences } from '@/lib/ensureKinyarwanda';
 
 export default function ElderCreateStoryPage() {
   const router = useRouter();
@@ -37,10 +38,12 @@ export default function ElderCreateStoryPage() {
     setError('');
 
     try {
-      const sentences = buildSentencesFromTranscript(transcript, selectedThemes);
+      let sentences = buildSentencesFromTranscript(transcript, selectedThemes);
       if (sentences.length < 3) {
         throw new Error('Write at least 3 sentences in your transcript.');
       }
+
+      sentences = await ensureKinyarwandaOnSentences(sentences);
 
       const response = await fetch('/api/stories', {
         method: 'POST',
@@ -77,8 +80,8 @@ export default function ElderCreateStoryPage() {
           <StoryEyebrow>Write by hand</StoryEyebrow>
           <StoryTitle>Craft your family narrative</StoryTitle>
           <StoryLead>
-            Paste or type the full transcript. We split sentences automatically — then you can add
-            themes, voices, and Kinyarwanda lines.
+            Paste or type the full transcript. We split sentences and generate Kinyarwanda for each
+            line — then you can refine themes, voices, and translations.
           </StoryLead>
 
           <label className="mb-4 block">
@@ -129,7 +132,7 @@ export default function ElderCreateStoryPage() {
 
           {error && <StoryAlert message={error} />}
           <StoryButton type="submit" disabled={loading} className="w-full">
-            {loading ? 'Creating draft…' : 'Continue to sentence editor'}
+            {loading ? 'Translating & creating…' : 'Continue to sentence editor'}
           </StoryButton>
         </form>
       </StoryPanel>

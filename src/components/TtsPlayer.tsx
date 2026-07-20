@@ -30,7 +30,7 @@ export default function TtsPlayer() {
   const generateSpeech = async () => {
     const trimmed = text.trim();
     if (!trimmed) {
-      setError('Enter some Kinyarwanda text first.');
+      setError('Enter some text first (English, Kinyarwanda, or mixed).');
       return;
     }
 
@@ -44,10 +44,20 @@ export default function TtsPlayer() {
       }
       setAudioUrl(null);
 
+      // Heuristic: treat as Kinyarwanda when the line has no Latin-only English cues
+      // but includes common RW orthography, or when the user prefixes with "rw:".
+      const looksRw =
+        /^rw\s*:/i.test(trimmed) ||
+        /[áéíóúñ]|(\b(muraho|neza|habaye|umwana|nyirarama|amahoro)\b)/i.test(trimmed);
+      const textForTts = trimmed.replace(/^rw\s*:/i, '').trim();
       const response = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: trimmed, voice: 'female' }),
+        body: JSON.stringify({
+          text: textForTts,
+          lang: looksRw ? 'rw' : 'en',
+          characterType: 'grandma',
+        }),
       });
 
       if (!response.ok) {
@@ -84,23 +94,23 @@ export default function TtsPlayer() {
 
   return (
     <StoryPanel>
-      <StoryEyebrow>Kinyarwanda voice</StoryEyebrow>
-      <StoryTitle>Mateza text to speech</StoryTitle>
+      <StoryEyebrow>Story narration</StoryEyebrow>
+      <StoryTitle>Text to speech</StoryTitle>
       <StoryLead>
-        Generate natural Kinyarwanda speech with Mateza — better accent and pronunciation than the
-        browser voice.
+        English uses ElevenLabs; Kinyarwanda uses Proto&apos;s native Voice API. Prefix with{' '}
+        <code className="text-sm">rw:</code> to force Kinyarwanda.
       </StoryLead>
 
       {error ? <StoryAlert message={error} /> : null}
 
       <label className="mb-2 block font-label-sm uppercase tracking-widest text-[#524348]">
-        Kinyarwanda text
+        Narration text
       </label>
       <textarea
         className={`${storyTextareaClass} mb-4 min-h-32`}
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder="Andika inyandiko mu Kinyarwanda…"
+        placeholder="Once upon a time… / Habaye n'ubwo… / Mixed EN + RW welcome"
         disabled={loading}
       />
 

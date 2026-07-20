@@ -55,7 +55,7 @@ export default function ImmersiveWorldPreview({
   const lines =
     sentences.length > 0
       ? sentences
-      : [{ sentenceText: storyTitle, sentenceOrder: 1 }];
+      : [{ sentenceText: storyTitle, sentenceOrder: 1, kinyarwandaText: '' }];
 
   const [sentenceIndex, setSentenceIndex] = useState(0);
   const [autoTour, setAutoTour] = useState(true);

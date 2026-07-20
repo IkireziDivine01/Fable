@@ -4,8 +4,10 @@ import { Suspense } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Preload } from '@react-three/drei';
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
+import { PCFShadowMap } from 'three';
 import EnvironmentScene from './EnvironmentScene';
 import HotspotCard from './HotspotCard';
+import WordSparkCard from './WordSparkCard';
 import StoryCharacterMesh from './StoryCharacterMesh';
 import StoryDialogueHud from './StoryDialogueHud';
 import { useImmersiveStore, useActiveGesture } from '@/lib/immersive/store';
@@ -20,7 +22,7 @@ function CameraRig({ compact, worldPreview }: { compact: boolean; worldPreview: 
   const characters = useImmersiveStore((s) => s.characters);
   const isPlaying = useImmersiveStore((s) => s.isPlaying);
   const hasDialogue = useImmersiveStore((s) =>
-    Boolean(s.currentSentenceText.trim() || s.currentKinyarwandaText.trim())
+    Boolean((s.currentSentenceText ?? '').trim() || (s.currentKinyarwandaText ?? '').trim())
   );
   const { camera } = useThree();
   const baseY = compact ? 1.55 : 1.85;
@@ -69,6 +71,7 @@ function SceneContents({
   const worldPreviewActive = useImmersiveStore((s) => s.worldPreviewActive);
   const currentSentenceText = useImmersiveStore((s) => s.currentSentenceText);
   const sentenceIndex = useImmersiveStore((s) => s.sentenceIndex);
+  const activeWordSpark = useImmersiveStore((s) => s.activeWordSpark);
   const eventGesture = useActiveGesture();
 
   const slots =
@@ -80,6 +83,7 @@ function SceneContents({
   // Prefer AI/heuristic event gesture; first line gets a welcoming wave
   const reactionGesture =
     eventGesture ?? (sentenceIndex === 0 && (isPlaying || Boolean(currentSentenceText)) ? 'wave' : null);
+  const kezaOpen = Boolean(activeWordSpark);
 
   return (
     <>
@@ -109,12 +113,14 @@ function SceneContents({
             faceShape={appearance.faceShape}
             garmentStyle={appearance.garmentStyle}
             personalityPose={appearance.personalityPose}
-            reactionGesture={isActive ? reactionGesture : null}
+            reactionGesture={isActive && !kezaOpen ? reactionGesture : null}
             gestureKey={sentenceIndex}
-            isSpeaking={isActive && (isPlaying || Boolean(currentSentenceText))}
-            idleMotion={!isActive || worldPreviewActive}
-            previewSpeech={worldPreviewActive && isActive}
-            showNameLabel={showCharacterLabels || isActive}
+            isSpeaking={
+              !kezaOpen && isActive && (isPlaying || Boolean(currentSentenceText))
+            }
+            idleMotion={!isActive || worldPreviewActive || kezaOpen}
+            previewSpeech={worldPreviewActive && isActive && !kezaOpen}
+            showNameLabel={!kezaOpen && (showCharacterLabels || isActive)}
             characterType={char.type}
             characterName={char.name.trim() || meta.label}
           />
@@ -148,14 +154,14 @@ export default function StoryCanvas({
   showDialogueHud?: boolean;
 }) {
   const hasDialogue = useImmersiveStore((s) =>
-    Boolean(s.currentSentenceText.trim() || s.currentKinyarwandaText.trim())
+    Boolean((s.currentSentenceText ?? '').trim() || (s.currentKinyarwandaText ?? '').trim())
   );
   const dialogueHudVisible = (showDialogueHud ?? !worldPreview) && hasDialogue;
 
   return (
     <div className={`${compact ? 'absolute inset-0' : 'absolute inset-0'} bg-[#1e1b18]`}>
       <Canvas
-        shadows
+        shadows={{ type: PCFShadowMap }}
         camera={{ position: [0, 1.55, compact ? 5 : 4.2], fov: compact ? 45 : 40 }}
         dpr={[1, 1.75]}
         gl={{ antialias: true, alpha: false }}
@@ -170,6 +176,7 @@ export default function StoryCanvas({
       </Canvas>
       {dialogueHudVisible && <StoryDialogueHud compact={compact} />}
       {!worldPreview && <HotspotCard />}
+      {!worldPreview && <WordSparkCard />}
       {!compact && (
         <div
           className="pointer-events-none absolute inset-3 rounded-lg border border-[#C4A574]/30 md:inset-5"

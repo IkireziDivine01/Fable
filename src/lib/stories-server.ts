@@ -7,6 +7,7 @@ import type {
   StoryRecord,
   StoryStatus,
 } from './storyHelpers';
+import { assertSentencesHaveKinyarwanda } from './storyHelpers';
 
 function mapStory(row: Record<string, unknown>): StoryRecord {
   return {
@@ -58,6 +59,8 @@ export async function createStoryWithSentences(input: {
   audioUrl?: string;
   source?: string;
 }) {
+  assertSentencesHaveKinyarwanda(input.sentences);
+
   const status = input.status ?? 'draft';
   const now = new Date().toISOString();
 
@@ -118,7 +121,7 @@ export async function createStoryWithSentences(input: {
     sentence_text: sentence.sentenceText,
     sentence_order: sentence.sentenceOrder,
     speaker: sentence.speaker ?? null,
-    kinyarwanda_text: sentence.kinyarwandaText ?? null,
+    kinyarwanda_text: sentence.kinyarwandaText.trim(),
     theme_label: sentence.themeLabel ?? null,
     elder_talking_points: sentence.elderTalkingPoints ?? null,
     child_prompt: sentence.childPrompt ?? null,
@@ -184,6 +187,12 @@ export async function listStoriesForHousehold(
 }
 
 export async function publishStory(storyId: string, householdId: string) {
+  const existing = await getStoryById(storyId);
+  if (!existing || existing.story.household_id !== householdId) {
+    throw new Error('Story not found');
+  }
+  assertSentencesHaveKinyarwanda(existing.sentences);
+
   const { data, error } = await supabaseAdmin
     .from('stories')
     .update({ status: 'published', updated_at: new Date().toISOString() })
@@ -206,6 +215,8 @@ export async function updateStorySentences(
     throw new Error('Story not found');
   }
 
+  assertSentencesHaveKinyarwanda(sentences);
+
   const audioByOrder = new Map(
     existing.sentences.map((s) => [s.sentence_order, s.audio_url ?? null])
   );
@@ -227,7 +238,7 @@ export async function updateStorySentences(
       sentence_text: sentence.sentenceText,
       sentence_order: order,
       speaker: sentence.speaker ?? null,
-      kinyarwanda_text: sentence.kinyarwandaText ?? null,
+      kinyarwanda_text: sentence.kinyarwandaText.trim(),
       theme_label: sentence.themeLabel ?? null,
       elder_talking_points: sentence.elderTalkingPoints ?? null,
       child_prompt: sentence.childPrompt ?? null,

@@ -19,12 +19,19 @@ import type {
   StoryHotspot,
   StorySceneSpec,
   TimeOfDay,
+  VocabMatchPair,
   WeatherType,
 } from './types';
 
 export const CAMERA_ZOOM_MIN = 2.8;
 export const CAMERA_ZOOM_MAX = 7;
 export const CAMERA_ZOOM_DEFAULT = 4.2;
+
+export type ActiveWordSpark = {
+  word: string;
+  sentence: string;
+  sentenceIndex: number;
+};
 
 interface ImmersiveStore {
   storyId: string | null;
@@ -36,11 +43,21 @@ interface ImmersiveStore {
   sceneEvents: Record<string, SceneEvent>;
   hotspots: StoryHotspot[];
   activeHotspotId: string | null;
+  /** Keza Word Spark — tapped dialogue word */
+  activeWordSpark: ActiveWordSpark | null;
+  /** Wired by ImmersiveStoryPlayer — pause narration when Keza opens */
+  onWordSparkOpen: (() => void) | null;
+  /** Vocab pairs for instant Word Spark glosses */
+  wordSparkVocabHints: VocabMatchPair[];
   characters: StoryCharacterSlot[];
   sentenceIndex: number;
   sentenceCount: number;
   /** Wired by ImmersiveStoryPlayer — advances line or finishes the story. */
   onDialogueAdvance: (() => void) | null;
+  /** Wired by ImmersiveStoryPlayer — pause/resume narration. */
+  onPlaybackPauseToggle: (() => void) | null;
+  /** True when the kid explicitly paused (vs line finished / loading). */
+  userPaused: boolean;
   isPlaying: boolean;
   mouthViseme: RhubarbViseme;
   activeCharacterIndex: number;
@@ -97,10 +114,15 @@ interface ImmersiveStore {
   setSentenceIndex: (index: number) => void;
   setSentenceCount: (count: number) => void;
   setOnDialogueAdvance: (handler: (() => void) | null) => void;
+  setOnPlaybackPauseToggle: (handler: (() => void) | null) => void;
+  setUserPaused: (paused: boolean) => void;
   setPlaying: (playing: boolean) => void;
   setMouthViseme: (value: RhubarbViseme) => void;
   setActiveCharacterIndex: (index: number) => void;
   setActiveHotspot: (id: string | null) => void;
+  setActiveWordSpark: (spark: ActiveWordSpark | null) => void;
+  setOnWordSparkOpen: (handler: (() => void) | null) => void;
+  setWordSparkVocabHints: (pairs: VocabMatchPair[]) => void;
   setAmbientMuted: (muted: boolean) => void;
   setEngagementMode: (mode: EngagementSceneMode) => void;
   setEngagementTargetPropTypes: (types: string[]) => void;
@@ -147,10 +169,15 @@ export const useImmersiveStore = create<ImmersiveStore>((set) => ({
   sceneEvents: {},
   hotspots: [],
   activeHotspotId: null,
+  activeWordSpark: null,
+  onWordSparkOpen: null,
+  wordSparkVocabHints: [],
   characters: [{ name: 'Grandmother', type: 'grandma', position: 1 }],
   sentenceIndex: 0,
   sentenceCount: 0,
   onDialogueAdvance: null,
+  onPlaybackPauseToggle: null,
+  userPaused: false,
   isPlaying: false,
   mouthViseme: 'X',
   activeCharacterIndex: 0,
@@ -192,6 +219,7 @@ export const useImmersiveStore = create<ImmersiveStore>((set) => ({
       sceneEvents: sceneEvents ?? {},
       hotspots: resolveHotspots(hotspots, baseSpec, environment),
       activeHotspotId: null,
+      activeWordSpark: null,
       characters,
       useAiVoice: useAiVoice ?? false,
       isImmersive: true,
@@ -213,6 +241,21 @@ export const useImmersiveStore = create<ImmersiveStore>((set) => ({
     isImmersive,
     useAiVoice,
   }) => {
+    const prev = useImmersiveStore.getState();
+    const sameStory = prev.storyId === storyId;
+    let displayLanguage: DisplayLanguage =
+      sameStory && (prev.displayLanguage === 'en' || prev.displayLanguage === 'rw')
+        ? prev.displayLanguage
+        : 'en';
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = window.sessionStorage.getItem(`fable:lang:${storyId}`);
+        if (saved === 'en' || saved === 'rw') displayLanguage = saved;
+      } catch {
+        /* ignore */
+      }
+    }
+
     const storedSpec = sceneSpec ?? null;
     const storedBrief = sceneBrief ?? null;
     const baseSpec = resolveBaseSceneSpec(environment, storedSpec, storedBrief);
@@ -224,21 +267,28 @@ export const useImmersiveStore = create<ImmersiveStore>((set) => ({
       sceneEvents: sceneEvents ?? {},
       hotspots: resolveHotspots(hotspots, baseSpec, environment),
       activeHotspotId: null,
+      activeWordSpark: null,
+      onWordSparkOpen: null,
+      wordSparkVocabHints: sameStory ? prev.wordSparkVocabHints : [],
       characters:
         characters.length > 0 ? characters : [{ name: 'Grandmother', type: 'grandma', position: 1 }],
       isImmersive,
       useAiVoice: useAiVoice ?? false,
-      sentenceIndex: 0,
-      sentenceCount: 0,
+      // Keep progress + dialogue when the same story re-inits (scene deps refresh).
+      // Fresh stories start clean; ImmersiveStoryPlayer resets index on storyId mount.
+      sentenceIndex: sameStory ? prev.sentenceIndex : 0,
+      sentenceCount: sameStory ? prev.sentenceCount : 0,
       onDialogueAdvance: null,
+      onPlaybackPauseToggle: null,
+      userPaused: false,
       isPlaying: false,
       mouthViseme: 'X',
-      activeCharacterIndex: 0,
-      currentSentenceText: '',
-      currentKinyarwandaText: '',
-      displayLanguage: 'en',
-      cameraZoom: CAMERA_ZOOM_DEFAULT,
-      ambientMuted: false,
+      activeCharacterIndex: sameStory ? prev.activeCharacterIndex : 0,
+      currentSentenceText: sameStory ? prev.currentSentenceText : '',
+      currentKinyarwandaText: sameStory ? prev.currentKinyarwandaText : '',
+      displayLanguage,
+      cameraZoom: sameStory ? prev.cameraZoom : CAMERA_ZOOM_DEFAULT,
+      ambientMuted: sameStory ? prev.ambientMuted : false,
       engagementMode: 'off',
       engagementTargetPropTypes: [],
       foundPropTypes: [],
@@ -268,13 +318,19 @@ export const useImmersiveStore = create<ImmersiveStore>((set) => ({
       ),
     })),
 
-  setSentenceIndex: (index) => set({ sentenceIndex: index, mouthViseme: 'X' }),
+  setSentenceIndex: (index) =>
+    set({ sentenceIndex: index, mouthViseme: 'X', activeWordSpark: null }),
   setSentenceCount: (count) => set({ sentenceCount: count }),
   setOnDialogueAdvance: (handler) => set({ onDialogueAdvance: handler }),
+  setOnPlaybackPauseToggle: (handler) => set({ onPlaybackPauseToggle: handler }),
+  setUserPaused: (paused) => set({ userPaused: paused }),
   setPlaying: (playing) => set({ isPlaying: playing }),
   setMouthViseme: (value) => set({ mouthViseme: value }),
   setActiveCharacterIndex: (index) => set({ activeCharacterIndex: index }),
   setActiveHotspot: (id) => set({ activeHotspotId: id }),
+  setActiveWordSpark: (spark) => set({ activeWordSpark: spark }),
+  setOnWordSparkOpen: (handler) => set({ onWordSparkOpen: handler }),
+  setWordSparkVocabHints: (pairs) => set({ wordSparkVocabHints: pairs }),
   setAmbientMuted: (muted) => set({ ambientMuted: muted }),
   setEngagementMode: (mode) => set({ engagementMode: mode }),
   setEngagementTargetPropTypes: (types) => set({ engagementTargetPropTypes: types }),
@@ -301,6 +357,7 @@ export const useImmersiveStore = create<ImmersiveStore>((set) => ({
       huntReveal: null,
       onEngagementPropSelect: null,
       activeHotspotId: null,
+      activeWordSpark: null,
     }),
   reset: () =>
     set({
@@ -310,10 +367,15 @@ export const useImmersiveStore = create<ImmersiveStore>((set) => ({
       sceneEvents: {},
       hotspots: [],
       activeHotspotId: null,
+      activeWordSpark: null,
+      onWordSparkOpen: null,
+      wordSparkVocabHints: [],
       characters: [],
       sentenceIndex: 0,
       sentenceCount: 0,
       onDialogueAdvance: null,
+      onPlaybackPauseToggle: null,
+      userPaused: false,
       isPlaying: false,
       mouthViseme: 'X',
       activeCharacterIndex: 0,

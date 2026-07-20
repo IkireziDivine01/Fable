@@ -6,6 +6,7 @@ import CharacterPortraitMini from '@/components/immersive/CharacterPortraitMini'
 import { CHARACTER_META } from '@/lib/immersive/presets';
 import { resolveCharacterAppearance } from '@/lib/immersive/sceneSpec';
 import { useImmersiveStore } from '@/lib/immersive/store';
+import { tokenizeVisibleDialogue } from '@/lib/immersive/wordSparkGuide';
 
 function useTypewriter(text: string, active: boolean, charsPerSecond = 48) {
   const [visibleCount, setVisibleCount] = useState(0);
@@ -65,19 +66,24 @@ export default function StoryDialogueHud({ compact = false }: StoryDialogueHudPr
   const currentKinyarwandaText = useImmersiveStore((s) => s.currentKinyarwandaText);
   const displayLanguage = useImmersiveStore((s) => s.displayLanguage);
   const isPlaying = useImmersiveStore((s) => s.isPlaying);
+  const userPaused = useImmersiveStore((s) => s.userPaused);
   const sentenceIndex = useImmersiveStore((s) => s.sentenceIndex);
   const sentenceCount = useImmersiveStore((s) => s.sentenceCount);
   const onDialogueAdvance = useImmersiveStore((s) => s.onDialogueAdvance);
+  const engagementMode = useImmersiveStore((s) => s.engagementMode);
+  const setActiveWordSpark = useImmersiveStore((s) => s.setActiveWordSpark);
+  const onWordSparkOpen = useImmersiveStore((s) => s.onWordSparkOpen);
+  const activeWordSpark = useImmersiveStore((s) => s.activeWordSpark);
 
   const character = characters[activeCharacterIndex] ?? characters[0];
   const meta = character ? CHARACTER_META[character.type] : null;
   const appearance = character ? resolveCharacterAppearance(character) : null;
 
   const displayText = useMemo(() => {
-    if (displayLanguage === 'rw' && currentKinyarwandaText.trim()) {
+    if (displayLanguage === 'rw' && (currentKinyarwandaText ?? '').trim()) {
       return currentKinyarwandaText.trim();
     }
-    return currentSentenceText.trim();
+    return (currentSentenceText ?? '').trim();
   }, [currentKinyarwandaText, currentSentenceText, displayLanguage]);
 
   const characterName = character?.name.trim() || meta?.label || 'Storyteller';
@@ -86,6 +92,26 @@ export default function StoryDialogueHud({ compact = false }: StoryDialogueHudPr
   const lineComplete = !isPlaying && typedText.length >= displayText.length;
   const isLastLine = sentenceCount > 0 && sentenceIndex >= sentenceCount - 1;
   const advanceLabel = isLastLine ? 'Finish' : 'Next';
+  /** Keza works anytime during the story — not only after a line finishes */
+  const wordsInteractive = engagementMode === 'off' && Boolean(displayText);
+
+  const tokens = useMemo(
+    () =>
+      wordsInteractive
+        ? tokenizeVisibleDialogue(displayText, typedText.length)
+        : null,
+    [displayText, typedText.length, wordsInteractive]
+  );
+
+  const openWordSpark = (word: string) => {
+    if (!wordsInteractive || !word.trim()) return;
+    onWordSparkOpen?.();
+    setActiveWordSpark({
+      word: word.trim(),
+      sentence: displayText,
+      sentenceIndex,
+    });
+  };
 
   if (!displayText) return null;
 
@@ -198,31 +224,71 @@ export default function StoryDialogueHud({ compact = false }: StoryDialogueHudPr
                       style={{ fontFamily: "'Fredoka', sans-serif" }}
                     >
                       <VoiceWave active />
-                      Inkuru
+                      Inkuru · tap a word
                     </span>
                   ) : (
                     <span
                       className="text-[10px] uppercase tracking-[0.18em] text-[#857278]"
                       style={{ fontFamily: "'Fredoka', sans-serif" }}
                     >
-                      {lineComplete ? 'Line complete' : 'Paused'}
+                      {userPaused ? 'Paused · tap a word' : 'Tap a word · Keza'}
                     </span>
                   )}
                 </div>
-
               </div>
 
-              <p
+              <div
                 className={`max-h-[4.5rem] overflow-y-auto leading-snug text-[#fff8f5] ${
                   compact ? 'text-[13px]' : 'text-sm md:text-[15px]'
                 }`}
                 style={{ fontFamily: "'Fredoka', sans-serif", fontWeight: 500 }}
               >
-                {typedText}
-                {isPlaying && typedText.length < displayText.length && (
-                  <span className="ml-0.5 inline-block h-[1em] w-0.5 animate-pulse bg-[#FF7956]" />
-                )}
-              </p>
+                {tokens
+                  ? (
+                    <>
+                      {tokens.map((token, i) => {
+                      if (token.kind === 'gap') {
+                        return <span key={`g-${i}`}>{token.text}</span>;
+                      }
+                      if (!token.tappable) {
+                        return <span key={`w-${i}`}>{token.raw}</span>;
+                      }
+                      const selected =
+                        activeWordSpark?.word.toLowerCase() === token.text.toLowerCase() &&
+                        activeWordSpark.sentenceIndex === sentenceIndex;
+                      return (
+                        <button
+                          key={`w-${i}`}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openWordSpark(token.text);
+                          }}
+                          className={`inline rounded-sm px-0.5 transition ${
+                            selected
+                              ? 'bg-[#FF7956]/35 text-[#fff8f5] underline decoration-[#FF7956] decoration-2 underline-offset-2'
+                              : 'underline decoration-[#C4A574]/55 decoration-dotted underline-offset-2 hover:bg-[#FF7956]/20 hover:decoration-[#FF7956]'
+                          }`}
+                          aria-label={`Ask Keza about ${token.text}`}
+                        >
+                          {token.raw}
+                        </button>
+                      );
+                      })}
+                      {isPlaying && typedText.length < displayText.length && (
+                        <span className="ml-0.5 inline-block h-[1em] w-0.5 animate-pulse bg-[#FF7956]" />
+                      )}
+                    </>
+                  )
+                  : (
+                    <>
+                      {typedText}
+                      {isPlaying && typedText.length < displayText.length && (
+                        <span className="ml-0.5 inline-block h-[1em] w-0.5 animate-pulse bg-[#FF7956]" />
+                      )}
+                    </>
+                  )}
+              </div>
 
               {onDialogueAdvance && (
                 <button

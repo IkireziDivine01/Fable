@@ -365,7 +365,6 @@ export default function KidLibraryPage() {
           {FILTERS.map((tab) => {
             const active = filter === tab.id;
             const count = filterCount(tab.id);
-            if (tab.id !== 'all' && count === 0) return null;
             return (
               <button
                 key={tab.id}
