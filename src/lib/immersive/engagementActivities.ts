@@ -361,10 +361,10 @@ export function normalizeEngagementActivities(
     if (normalized) byType.set(type, normalized);
   }
 
-  // Cap post-story activities to 2 (hunt / sequence / vocab), keep predict_next
+  // Prefer vocab_match for Glow Trail; keep hunt/sequence in storage for legacy synthesis
   const postTypes: EngagementActivity['type'][] = [
-    'treasure_hunt',
     'vocab_match',
+    'treasure_hunt',
     'sequence',
   ];
   const post = postTypes
@@ -386,22 +386,63 @@ export function getPredictNextActivity(
   return activities?.find((a): a is PredictNextActivity => a.type === 'predict_next');
 }
 
-/** Post-story pack order: hunt → vocab → sequence (skip missing). */
-export function getPostStoryActivities(
-  activities: EngagementActivity[] | null | undefined
-): Array<TreasureHuntActivity | VocabMatchActivity | SequenceActivity> {
-  if (!activities?.length) return [];
-  const order: Array<'treasure_hunt' | 'vocab_match' | 'sequence'> = [
-    'treasure_hunt',
-    'vocab_match',
-    'sequence',
-  ];
-  const result: Array<TreasureHuntActivity | VocabMatchActivity | SequenceActivity> = [];
-  for (const type of order) {
-    const found = activities.find((a) => a.type === type);
-    if (found && found.type !== 'predict_next') result.push(found);
+const GLOW_TRAIL_PROMPT_EN = 'Letter Party — fill in the missing letter!';
+const GLOW_TRAIL_PROMPT_RW = 'Letter Party — uzuza inyuguti ibura!';
+
+/**
+ * Vocab source for the post-story Letter Party (word build) game.
+ * Prefers vocab_match; synthesizes from treasure_hunt / scene props when needed.
+ */
+export function resolveGlowTrailActivity(
+  activities: EngagementActivity[] | null | undefined,
+  ctx?: EnsureEngagementContext
+): VocabMatchActivity | undefined {
+  const vocab = activities?.find((a): a is VocabMatchActivity => a.type === 'vocab_match');
+  if (vocab && vocab.pairs.length >= 2) {
+    return {
+      type: 'vocab_match',
+      promptEn: vocab.promptEn?.trim() || GLOW_TRAIL_PROMPT_EN,
+      promptRw: vocab.promptRw?.trim() || GLOW_TRAIL_PROMPT_RW,
+      pairs: vocab.pairs.slice(0, 4),
+    };
   }
-  return result;
+
+  const hunt = activities?.find((a): a is TreasureHuntActivity => a.type === 'treasure_hunt');
+  if (hunt) {
+    const pairs: VocabMatchPair[] = [];
+    for (const target of hunt.targets) {
+      const cat = PROP_CATALOG[target.propType];
+      if (!cat) continue;
+      pairs.push({
+        propType: target.propType,
+        wordRw: cat.wordRw,
+        glossEn: cat.glossEn,
+      });
+      if (pairs.length >= 4) break;
+    }
+    if (pairs.length >= 2) {
+      return {
+        type: 'vocab_match',
+        promptEn: GLOW_TRAIL_PROMPT_EN,
+        promptRw: GLOW_TRAIL_PROMPT_RW,
+        pairs,
+      };
+    }
+  }
+
+  if (ctx) {
+    return buildDefaultVocabMatch(resolveEngagementPropTypes(ctx));
+  }
+  return undefined;
+}
+
+/** Post-story pack: Letter Party word-build (from vocab pairs). */
+export function getPostStoryActivities(
+  activities: EngagementActivity[] | null | undefined,
+  ctx?: EnsureEngagementContext
+): VocabMatchActivity[] {
+  const trail = resolveGlowTrailActivity(activities, ctx);
+  return trail ? [trail] : [];
 }
 
 export interface EnsureEngagementContext {
@@ -525,8 +566,8 @@ function buildDefaultVocabMatch(props: PropType[]): VocabMatchActivity | undefin
   if (pairs.length < 3) return undefined;
   return {
     type: 'vocab_match',
-    promptEn: 'Tap the thing that matches each word!',
-    promptRw: 'Kanda ikintu gihuza n\'ijambo!',
+    promptEn: GLOW_TRAIL_PROMPT_EN,
+    promptRw: GLOW_TRAIL_PROMPT_RW,
     pairs,
   };
 }
@@ -633,14 +674,9 @@ export function buildDefaultEngagementActivities(
   const predict = buildDefaultPredictNext(ctx.sentences);
   if (predict) raw.push(predict);
 
-  const hunt = buildDefaultTreasureHunt(props);
-  if (hunt) raw.push(hunt);
-
+  // Glow Trail (stored as vocab_match) is the sole post-story 3D game
   const vocab = buildDefaultVocabMatch(props);
   if (vocab) raw.push(vocab);
-
-  const sequence = buildDefaultSequence(ctx.sentences);
-  if (sequence) raw.push(sequence);
 
   return normalizeEngagementActivities(raw, brief, {
     sentenceCount: ctx.sentences?.length ?? 0,
@@ -682,22 +718,25 @@ export function ensureEngagementActivities(
     if (fallbackPredict) byType.set('predict_next', fallbackPredict);
   }
 
-  // Fill post gaps up to 2 without dropping stored post activities
-  const postTypes: EngagementActivity['type'][] = [
-    'treasure_hunt',
-    'vocab_match',
-    'sequence',
-  ];
-  let postCount = postTypes.filter((t) => byType.has(t)).length;
-  for (const type of postTypes) {
-    if (postCount >= 2) break;
-    if (byType.has(type)) continue;
-    const fallback = defaultByType.get(type);
-    if (!fallback) continue;
-    byType.set(type, fallback);
-    postCount += 1;
+  // Ensure Glow Trail source (vocab_match) exists; synthesize from hunt if needed
+  if (!byType.has('vocab_match')) {
+    const fromHunt = resolveGlowTrailActivity(
+      [...byType.values()],
+      ctx
+    );
+    if (fromHunt) {
+      byType.set('vocab_match', fromHunt);
+    } else {
+      const fallback = defaultByType.get('vocab_match');
+      if (fallback) byType.set('vocab_match', fallback);
+    }
   }
 
+  const postTypes: EngagementActivity['type'][] = [
+    'vocab_match',
+    'treasure_hunt',
+    'sequence',
+  ];
   const post = postTypes
     .map((t) => byType.get(t))
     .filter((a): a is EngagementActivity => Boolean(a))

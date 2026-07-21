@@ -1,6 +1,6 @@
 import { auth } from '@/auth';
 import { resolveStorySession } from '@/lib/auth-server';
-import { getKidLibraryWithProgress } from '@/lib/stories-server';
+import { getKidLearningStars, getKidLibraryWithProgress } from '@/lib/stories-server';
 import { NextResponse } from 'next/server';
 
 export async function GET() {
@@ -14,7 +14,10 @@ export async function GET() {
       return NextResponse.json({ error: 'Learners only' }, { status: 403 });
     }
 
-    const stories = await getKidLibraryWithProgress(ctx.householdId, ctx.authorId);
+    const [stories, stars] = await Promise.all([
+      getKidLibraryWithProgress(ctx.householdId, ctx.authorId),
+      getKidLearningStars(ctx.householdId, ctx.authorId),
+    ]);
 
     const unread = stories.filter((s) => s.readStatus === 'new');
     const counts = {
@@ -25,7 +28,7 @@ export async function GET() {
       total: stories.length,
     };
 
-    return NextResponse.json({ stories, counts });
+    return NextResponse.json({ stories, counts, stars });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to load library' },

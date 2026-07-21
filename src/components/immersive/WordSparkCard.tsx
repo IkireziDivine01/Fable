@@ -23,6 +23,7 @@ export default function WordSparkCard() {
   const storyId = useImmersiveStore((s) => s.storyId);
   const activeWordSpark = useImmersiveStore((s) => s.activeWordSpark);
   const setActiveWordSpark = useImmersiveStore((s) => s.setActiveWordSpark);
+  const onWordSparkClose = useImmersiveStore((s) => s.onWordSparkClose);
   const storyLanguage = useImmersiveStore((s) => s.displayLanguage);
   const vocabHints = useImmersiveStore((s) => s.wordSparkVocabHints);
 
@@ -111,12 +112,17 @@ export default function WordSparkCard() {
 
   if (!activeWordSpark) return null;
 
+  const finishClose = () => {
+    setActiveWordSpark(null);
+    onWordSparkClose?.();
+  };
+
   const close = () => {
     stopHearRef.current?.();
     stopHearRef.current = null;
     setHearing(false);
-    setActiveWordSpark(null);
     setStamping(false);
+    finishClose();
   };
 
   const gotIt = () => {
@@ -126,7 +132,7 @@ export default function WordSparkCard() {
     setHearing(false);
     setStamping(true);
     window.setTimeout(() => {
-      setActiveWordSpark(null);
+      finishClose();
       setStamping(false);
     }, 520);
   };

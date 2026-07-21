@@ -1,5 +1,6 @@
 import { supabaseAdmin } from './supabase-admin';
 import { listHouseholdLearners } from './auth-server';
+import { starsFromActivityMetadata } from './immersive/learningStars';
 import type {
   StoryGenerationType,
   StorySentenceInput,
@@ -8,6 +9,8 @@ import type {
   StoryStatus,
 } from './storyHelpers';
 import { assertSentencesHaveKinyarwanda } from './storyHelpers';
+
+export { starsFromActivityMetadata } from './immersive/learningStars';
 
 function mapStory(row: Record<string, unknown>): StoryRecord {
   return {
@@ -518,8 +521,11 @@ export interface ReadingActivityItem {
   kidName: string;
   storyId: string | null;
   storyTitle: string;
-  eventType: 'STORY_STARTED' | 'STORY_COMPLETED' | 'QUESTION_ASKED';
+  eventType: 'STORY_STARTED' | 'STORY_COMPLETED' | 'QUESTION_ASKED' | 'ACTIVITY_COMPLETED';
   timestamp: string;
+  /** Letter Party (and future games) stars earned in this event */
+  stars?: number;
+  activityType?: string;
 }
 
 export interface LearnerShelfCounts {
@@ -540,6 +546,10 @@ export interface HouseholdReadingSummary {
     storiesStartedThisWeek: number;
     storiesCompletedTotal: number;
     storiesInProgress: number;
+    /** Letter Party stars earned this week */
+    starsThisWeek: number;
+    /** All-time Letter Party stars */
+    starsTotal: number;
     shelf: LearnerShelfCounts;
     lastActiveAt: string | null;
     accountStatus?: string;
@@ -548,6 +558,10 @@ export interface HouseholdReadingSummary {
   totalReadsThisWeek: number;
   totalStartsThisWeek: number;
   activeLearnersThisWeek: number;
+  /** Sum of Letter Party stars across learners this week */
+  totalStarsThisWeek: number;
+  /** All-time Letter Party stars across learners */
+  totalStarsAllTime: number;
   /** Sum of each learner’s shelf (same story can count once per learner). */
   shelfTotals: LearnerShelfCounts;
   /** Published in the last FRESH_STORY_DAYS (unique stories). */
@@ -557,10 +571,44 @@ export interface HouseholdReadingSummary {
   unansweredQuestions: number;
 }
 
-function dayKey(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
+export async function getKidLearningStars(
+  householdId: string,
+  kidId: string
+): Promise<{ starsThisWeek: number; starsTotal: number }> {
+  const weekStart = new Date();
+  weekStart.setHours(0, 0, 0, 0);
+  weekStart.setDate(weekStart.getDate() - 6);
+
+  const { data, error } = await supabaseAdmin
+    .from('interaction_logs')
+    .select('metadata, created_at')
+    .eq('household_id', householdId)
+    .eq('actor_id', kidId)
+    .eq('event_type', 'ACTIVITY_COMPLETED');
+
+  if (error) {
+    console.warn('Could not load kid stars:', error.message);
+    return { starsThisWeek: 0, starsTotal: 0 };
+  }
+
+  let starsThisWeek = 0;
+  let starsTotal = 0;
+  for (const row of data ?? []) {
+    const earned = starsFromActivityMetadata(row.metadata);
+    if (earned <= 0) continue;
+    starsTotal += earned;
+    if (new Date(String(row.created_at)) >= weekStart) {
+      starsThisWeek += earned;
+    }
+  }
+  return { starsThisWeek, starsTotal };
+}
+
+function dayKey(date: string | Date): string {
+  const dateObj = typeof date === 'string' ? new Date(date) : date;
+  const y = dateObj.getFullYear();
+  const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const d = String(dateObj.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 }
 
@@ -638,18 +686,35 @@ export async function getHouseholdReadingActivity(
 
   const { data: feedLogs, error: feedError } = await supabaseAdmin
     .from('interaction_logs')
-    .select('id, actor_id, story_id, event_type, created_at')
+    .select('id, actor_id, story_id, event_type, created_at, metadata')
     .eq('household_id', householdId)
-    .in('event_type', ['STORY_STARTED', 'STORY_COMPLETED', 'QUESTION_ASKED'])
+    .in('event_type', [
+      'STORY_STARTED',
+      'STORY_COMPLETED',
+      'QUESTION_ASKED',
+      'ACTIVITY_COMPLETED',
+    ])
     .order('created_at', { ascending: false })
-    .limit(40);
+    .limit(50);
 
   if (feedError) {
     console.warn('Could not load activity feed:', feedError.message);
   }
 
+  // Letter Party stars — full history for totals + week
+  const { data: starLogs, error: starError } = await supabaseAdmin
+    .from('interaction_logs')
+    .select('actor_id, metadata, created_at')
+    .eq('household_id', householdId)
+    .eq('event_type', 'ACTIVITY_COMPLETED');
+
+  if (starError) {
+    console.warn('Could not load learning stars:', starError.message);
+  }
+
   const readingRows = readingLogs ?? [];
   const feedRows = feedLogs ?? [];
+  const starRows = starLogs ?? [];
   const weekRows = readingRows.filter((r) => new Date(String(r.created_at)) >= weekStart);
 
   let unansweredQuestions = 0;
@@ -718,6 +783,19 @@ export async function getHouseholdReadingActivity(
     }
   }
 
+  const starsByKid = new Map<string, { week: number; total: number }>();
+  for (const row of starRows) {
+    const earned = starsFromActivityMetadata(row.metadata);
+    if (earned <= 0) continue;
+    const kidId = String(row.actor_id);
+    const bucket = starsByKid.get(kidId) ?? { week: 0, total: 0 };
+    bucket.total += earned;
+    if (new Date(String(row.created_at)) >= weekStart) {
+      bucket.week += earned;
+    }
+    starsByKid.set(kidId, bucket);
+  }
+
   const learners = householdLearners.map((kid) => {
     const row = kid as Record<string, unknown>;
     const kidId = String(row.id);
@@ -728,6 +806,7 @@ export async function getHouseholdReadingActivity(
     const lastEvent =
       feedRows.find((r) => String(r.actor_id) === kidId) ??
       readingRows.find((r) => String(r.actor_id) === kidId);
+    const stars = starsByKid.get(kidId) ?? { week: 0, total: 0 };
     return {
       id: kidId,
       name: String(row.name ?? 'Learner'),
@@ -735,6 +814,8 @@ export async function getHouseholdReadingActivity(
       storiesStartedThisWeek: startedThisWeek,
       storiesCompletedTotal: shelf.completed,
       storiesInProgress: shelf.reading,
+      starsThisWeek: stars.week,
+      starsTotal: stars.total,
       shelf,
       lastActiveAt: lastEvent ? String(lastEvent.created_at) : null,
       accountStatus: row.account_status ? String(row.account_status) : 'active',
@@ -754,16 +835,51 @@ export async function getHouseholdReadingActivity(
   );
   shelfTotals.published = publishedStories.length;
 
-  const recentActivity: ReadingActivityItem[] = feedRows.slice(0, 24).map((row) => {
+  const recentActivity: ReadingActivityItem[] = feedRows
+    .filter((row) => {
+      if (String(row.event_type) !== 'ACTIVITY_COMPLETED') return true;
+      const meta =
+        row.metadata && typeof row.metadata === 'object'
+          ? (row.metadata as Record<string, unknown>)
+          : {};
+      const activityType = String(meta.activityType ?? '');
+      // Only surface Letter Party (and similar) star events in the parent feed
+      return (
+        activityType === 'word_build' ||
+        activityType === 'glow_trail' ||
+        starsFromActivityMetadata(row.metadata) > 0
+      );
+    })
+    .slice(0, 24)
+    .map((row) => {
     const actorId = String(row.actor_id);
     const profile = profileMap.get(actorId);
     const storyId = row.story_id ? String(row.story_id) : null;
     const eventType = String(row.event_type) as ReadingActivityItem['eventType'];
+    const meta =
+      row.metadata && typeof row.metadata === 'object'
+        ? (row.metadata as Record<string, unknown>)
+        : {};
+    const activityType =
+      typeof meta.activityType === 'string' ? meta.activityType : undefined;
+    const stars =
+      eventType === 'ACTIVITY_COMPLETED' ? starsFromActivityMetadata(row.metadata) : undefined;
+
     let storyTitle = storyId ? (storyMap.get(storyId) ?? 'Untitled story') : 'Untitled story';
     if (eventType === 'QUESTION_ASKED') {
       storyTitle = storyId
         ? `Asked about “${storyMap.get(storyId) ?? 'a story'}”`
         : 'Asked a question';
+    } else if (eventType === 'ACTIVITY_COMPLETED') {
+      const label =
+        activityType === 'word_build' || activityType === 'glow_trail'
+          ? 'Letter Party'
+          : activityType === 'predict_next'
+            ? 'Story guess'
+            : 'a learning game';
+      storyTitle = storyId
+        ? `${label} · “${storyMap.get(storyId) ?? 'a story'}”`
+        : label;
     }
     return {
       id: String(row.id),
@@ -773,6 +889,8 @@ export async function getHouseholdReadingActivity(
       storyTitle,
       eventType,
       timestamp: String(row.created_at),
+      ...(stars != null && stars > 0 ? { stars } : {}),
+      ...(activityType ? { activityType } : {}),
     };
   });
 
@@ -830,12 +948,17 @@ export async function getHouseholdReadingActivity(
     isFreshPublished(s.created_at, now)
   ).length;
 
+  const totalStarsThisWeek = learners.reduce((sum, l) => sum + l.starsThisWeek, 0);
+  const totalStarsAllTime = learners.reduce((sum, l) => sum + l.starsTotal, 0);
+
   return {
     learners,
     recentActivity,
     totalReadsThisWeek,
     totalStartsThisWeek,
     activeLearnersThisWeek,
+    totalStarsThisWeek,
+    totalStarsAllTime,
     shelfTotals,
     freshPublishedCount,
     dailyCompletions,

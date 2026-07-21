@@ -24,8 +24,10 @@ import type {
 } from './types';
 
 export const CAMERA_ZOOM_MIN = 2.8;
-export const CAMERA_ZOOM_MAX = 7;
+export const CAMERA_ZOOM_MAX = 8;
 export const CAMERA_ZOOM_DEFAULT = 4.2;
+/** Pulled-back framing so Glow Trail props stay in view */
+export const CAMERA_ZOOM_GLOW_TRAIL = 6.2;
 
 export type ActiveWordSpark = {
   word: string;
@@ -47,6 +49,8 @@ interface ImmersiveStore {
   activeWordSpark: ActiveWordSpark | null;
   /** Wired by ImmersiveStoryPlayer — pause narration when Keza opens */
   onWordSparkOpen: (() => void) | null;
+  /** Wired by ImmersiveStoryPlayer — resume narration when Keza closes */
+  onWordSparkClose: (() => void) | null;
   /** Vocab pairs for instant Word Spark glosses */
   wordSparkVocabHints: VocabMatchPair[];
   characters: StoryCharacterSlot[];
@@ -71,17 +75,19 @@ interface ImmersiveStore {
   ambientMuted: boolean;
   /** Hide 3D speech bubbles / nameplates (predict, pack, etc.) */
   sceneChromeHidden: boolean;
-  /** off = free explore hotspots; hunt/vocab = gated prop taps */
+  /** off = free explore hotspots; hunt/vocab/glow = gated prop taps */
   engagementMode: EngagementSceneMode;
-  /** Prop types currently interactive in hunt/vocab mode */
+  /** Prop types currently interactive in hunt/vocab/glow mode */
   engagementTargetPropTypes: string[];
   foundPropTypes: string[];
-  /** Expected prop for current vocab pair */
+  /** Expected prop for current Glow Trail / vocab word */
   vocabExpectedPropType: string | null;
   /** Brief flash when kid taps wrong prop */
   wrongTapPropType: string | null;
-  /** Strong pulse after kid asks for a hint */
+  /** Strong pulse after misses / hint */
   hintPropType: string | null;
+  /** Gold confirm bounce on correct Glow Trail tap */
+  confirmPropType: string | null;
   /** Hunt reveal overrides HotspotCard title/body when set */
   huntReveal: { title: string; body: string; titleRw?: string; bodyRw?: string } | null;
   onEngagementPropSelect: ((propType: string) => void) | null;
@@ -124,6 +130,7 @@ interface ImmersiveStore {
   setActiveHotspot: (id: string | null) => void;
   setActiveWordSpark: (spark: ActiveWordSpark | null) => void;
   setOnWordSparkOpen: (handler: (() => void) | null) => void;
+  setOnWordSparkClose: (handler: (() => void) | null) => void;
   setWordSparkVocabHints: (pairs: VocabMatchPair[]) => void;
   setAmbientMuted: (muted: boolean) => void;
   setSceneChromeHidden: (hidden: boolean) => void;
@@ -134,6 +141,7 @@ interface ImmersiveStore {
   setVocabExpectedPropType: (propType: string | null) => void;
   setWrongTapPropType: (propType: string | null) => void;
   setHintPropType: (propType: string | null) => void;
+  setConfirmPropType: (propType: string | null) => void;
   setHuntReveal: (
     reveal: { title: string; body: string; titleRw?: string; bodyRw?: string } | null
   ) => void;
@@ -174,6 +182,7 @@ export const useImmersiveStore = create<ImmersiveStore>((set) => ({
   activeHotspotId: null,
   activeWordSpark: null,
   onWordSparkOpen: null,
+  onWordSparkClose: null,
   wordSparkVocabHints: [],
   characters: [{ name: 'Grandmother', type: 'grandma', position: 1 }],
   sentenceIndex: 0,
@@ -199,6 +208,7 @@ export const useImmersiveStore = create<ImmersiveStore>((set) => ({
   vocabExpectedPropType: null,
   wrongTapPropType: null,
   hintPropType: null,
+  confirmPropType: null,
   huntReveal: null,
   onEngagementPropSelect: null,
 
@@ -273,6 +283,7 @@ export const useImmersiveStore = create<ImmersiveStore>((set) => ({
       activeHotspotId: null,
       activeWordSpark: null,
       onWordSparkOpen: null,
+      onWordSparkClose: null,
       wordSparkVocabHints: sameStory ? prev.wordSparkVocabHints : [],
       characters:
         characters.length > 0 ? characters : [{ name: 'Grandmother', type: 'grandma', position: 1 }],
@@ -299,6 +310,7 @@ export const useImmersiveStore = create<ImmersiveStore>((set) => ({
       vocabExpectedPropType: null,
       wrongTapPropType: null,
       hintPropType: null,
+      confirmPropType: null,
       huntReveal: null,
       onEngagementPropSelect: null,
     });
@@ -334,6 +346,7 @@ export const useImmersiveStore = create<ImmersiveStore>((set) => ({
   setActiveHotspot: (id) => set({ activeHotspotId: id }),
   setActiveWordSpark: (spark) => set({ activeWordSpark: spark }),
   setOnWordSparkOpen: (handler) => set({ onWordSparkOpen: handler }),
+  setOnWordSparkClose: (handler) => set({ onWordSparkClose: handler }),
   setWordSparkVocabHints: (pairs) => set({ wordSparkVocabHints: pairs }),
   setAmbientMuted: (muted) => set({ ambientMuted: muted }),
   setSceneChromeHidden: (hidden) => set({ sceneChromeHidden: hidden }),
@@ -349,6 +362,7 @@ export const useImmersiveStore = create<ImmersiveStore>((set) => ({
   setVocabExpectedPropType: (propType) => set({ vocabExpectedPropType: propType }),
   setWrongTapPropType: (propType) => set({ wrongTapPropType: propType }),
   setHintPropType: (propType) => set({ hintPropType: propType }),
+  setConfirmPropType: (propType) => set({ confirmPropType: propType }),
   setHuntReveal: (reveal) => set({ huntReveal: reveal }),
   setOnEngagementPropSelect: (handler) => set({ onEngagementPropSelect: handler }),
   resetEngagement: () =>
@@ -359,6 +373,7 @@ export const useImmersiveStore = create<ImmersiveStore>((set) => ({
       vocabExpectedPropType: null,
       wrongTapPropType: null,
       hintPropType: null,
+      confirmPropType: null,
       huntReveal: null,
       onEngagementPropSelect: null,
       activeHotspotId: null,
@@ -375,6 +390,7 @@ export const useImmersiveStore = create<ImmersiveStore>((set) => ({
       activeHotspotId: null,
       activeWordSpark: null,
       onWordSparkOpen: null,
+      onWordSparkClose: null,
       wordSparkVocabHints: [],
       characters: [],
       sentenceIndex: 0,
@@ -400,6 +416,7 @@ export const useImmersiveStore = create<ImmersiveStore>((set) => ({
       vocabExpectedPropType: null,
       wrongTapPropType: null,
       hintPropType: null,
+      confirmPropType: null,
       huntReveal: null,
       onEngagementPropSelect: null,
     }),

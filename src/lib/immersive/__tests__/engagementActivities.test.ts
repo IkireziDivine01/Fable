@@ -5,8 +5,10 @@ import {
   getPostStoryActivities,
   getPredictNextActivity,
   normalizeEngagementActivities,
+  resolveEngagementPropTypes,
+  resolveGlowTrailActivity,
 } from '../engagementActivities';
-import type { EngagementActivity, SceneBrief } from '../types';
+import type { EngagementActivity, SceneBrief, StorySceneSpec } from '../types';
 
 const sceneBrief: SceneBrief = {
   mood: 'playful',
@@ -192,8 +194,8 @@ describe('normalizeEngagementActivities', () => {
 
     expect(activities?.map((a) => a.type)).toEqual([
       'predict_next',
-      'treasure_hunt',
       'vocab_match',
+      'treasure_hunt',
     ]);
     expect(activities?.some((a) => a.type === 'sequence')).toBe(false);
   });
@@ -229,13 +231,16 @@ describe('activity getters', () => {
     expect(getPredictNextActivity(null)).toBeUndefined();
   });
 
-  it('getPostStoryActivities orders hunt → vocab → sequence', () => {
-    expect(getPostStoryActivities(pack).map((a) => a.type)).toEqual([
-      'treasure_hunt',
-      'vocab_match',
-      'sequence',
-    ]);
+  it('getPostStoryActivities returns Glow Trail (vocab_match) only', () => {
+    expect(getPostStoryActivities(pack).map((a) => a.type)).toEqual(['vocab_match']);
     expect(getPostStoryActivities(undefined)).toEqual([]);
+  });
+
+  it('resolveGlowTrailActivity synthesizes from treasure_hunt when vocab is missing', () => {
+    const trail = resolveGlowTrailActivity([treasureHunt() as EngagementActivity]);
+    expect(trail?.type).toBe('vocab_match');
+    expect(trail?.pairs.length).toBeGreaterThanOrEqual(2);
+    expect(trail?.pairs.every((p) => p.wordRw && p.glossEn)).toBe(true);
   });
 });
 
@@ -248,18 +253,14 @@ const longSentences = [
 ];
 
 describe('buildDefaultEngagementActivities', () => {
-  it('builds predict + post pack from sceneBrief and sentences', () => {
+  it('builds predict + Glow Trail from sceneBrief and sentences', () => {
     const activities = buildDefaultEngagementActivities({
       sceneBrief,
       sentences: longSentences,
       environment: 'village',
     });
 
-    expect(activities?.map((a) => a.type)).toEqual([
-      'predict_next',
-      'treasure_hunt',
-      'vocab_match',
-    ]);
+    expect(activities?.map((a) => a.type)).toEqual(['predict_next', 'vocab_match']);
 
     const predict = activities?.find((a) => a.type === 'predict_next');
     expect(predict?.type).toBe('predict_next');
@@ -276,7 +277,7 @@ describe('buildDefaultEngagementActivities', () => {
       environment: 'village',
     });
     expect(activities?.some((a) => a.type === 'predict_next')).toBe(false);
-    expect(activities?.some((a) => a.type === 'treasure_hunt')).toBe(true);
+    expect(activities?.some((a) => a.type === 'vocab_match')).toBe(true);
   });
 
   it('falls back to environment props when sceneBrief has no keyProps', () => {
@@ -291,11 +292,10 @@ describe('buildDefaultEngagementActivities', () => {
       sentences: longSentences,
       environment: 'village',
     });
-    expect(activities?.some((a) => a.type === 'treasure_hunt')).toBe(true);
     expect(activities?.some((a) => a.type === 'vocab_match')).toBe(true);
   });
 
-  it('still builds sequence when props are unavailable', () => {
+  it('still builds predict when props are unavailable', () => {
     const activities = buildDefaultEngagementActivities({
       sceneBrief: {
         mood: 'warm',
@@ -305,7 +305,45 @@ describe('buildDefaultEngagementActivities', () => {
       },
       sentences: longSentences,
     });
-    expect(activities?.map((a) => a.type)).toEqual(['predict_next', 'sequence']);
+    expect(activities?.map((a) => a.type)).toEqual(['predict_next']);
+  });
+});
+
+describe('resolveEngagementPropTypes', () => {
+  it('prefers sceneBrief keyProps then sceneSpec objects', () => {
+    const sceneSpec: StorySceneSpec = {
+      backgroundColor: '#000000',
+      fogColor: '#000000',
+      groundColor: '#000000',
+      accentColor: '#000000',
+      lighting: { color: '#ffffff', intensity: 1 },
+      objects: [
+        { type: 'fire', x: 0 },
+        { type: 'path', x: 1 },
+        { type: 'spaceship', x: 2 },
+      ],
+    };
+
+    expect(
+      resolveEngagementPropTypes({
+        sceneBrief,
+        sceneSpec,
+      }).sort()
+    ).toEqual(['bench', 'drum', 'fire', 'goat', 'hut', 'path']);
+  });
+
+  it('falls back to environment preset when fewer than 2 props', () => {
+    const props = resolveEngagementPropTypes({
+      sceneBrief: {
+        mood: 'warm',
+        density: 'sparse',
+        paletteHint: { warmth: 0.5, saturation: 0.5, contrast: 0.5 },
+        keyProps: [{ type: 'hut', role: 'landmark' }],
+      },
+      environment: 'village',
+    });
+    expect(props.length).toBeGreaterThanOrEqual(2);
+    expect(props).toContain('hut');
   });
 });
 
@@ -348,7 +386,7 @@ describe('ensureEngagementActivities', () => {
     }
   });
 
-  it('fills missing activity types from defaults', () => {
+  it('fills missing Glow Trail from defaults', () => {
     const stored = [sequence()];
     const ensured = ensureEngagementActivities(stored as EngagementActivity[], {
       sceneBrief,
@@ -357,8 +395,7 @@ describe('ensureEngagementActivities', () => {
     });
 
     expect(ensured?.some((a) => a.type === 'predict_next')).toBe(true);
-    expect(ensured?.some((a) => a.type === 'sequence')).toBe(true);
-    // Cap still applies: at most 2 post activities
-    expect(getPostStoryActivities(ensured).length).toBeLessThanOrEqual(2);
+    expect(ensured?.some((a) => a.type === 'vocab_match')).toBe(true);
+    expect(getPostStoryActivities(ensured).map((a) => a.type)).toEqual(['vocab_match']);
   });
 });

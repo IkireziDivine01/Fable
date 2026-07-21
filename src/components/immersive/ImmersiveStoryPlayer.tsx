@@ -22,35 +22,32 @@ import {
   getVisemeAtTime,
 } from '@/lib/immersive/lipSync';
 import { deriveSceneEventsFromSentences } from '@/lib/immersive/sceneEvents';
-import { useActiveTimeOfDay, useActiveWeather, useImmersiveStore } from '@/lib/immersive/store';
+import {
+  CAMERA_ZOOM_DEFAULT,
+  useActiveTimeOfDay,
+  useActiveWeather,
+  useImmersiveStore,
+} from '@/lib/immersive/store';
 import type {
   DisplayLanguage,
   EngagementActivity,
   EnvironmentType,
   SceneBrief,
   SceneEvent,
-  SequenceActivity,
   StoryCharacterSlot,
   StoryHotspot,
   StorySceneSpec,
-  TreasureHuntActivity,
   VocabMatchActivity,
 } from '@/lib/immersive/types';
 
-type PostStoryActivity = TreasureHuntActivity | VocabMatchActivity | SequenceActivity;
+type PostStoryActivity = VocabMatchActivity;
 import type { KidSentence } from '@/components/story/KidStoryReader';
 import AskQuestionSheet from '@/components/kid/AskQuestionSheet';
 import StoryRecommendations from '@/components/story/StoryRecommendations';
 import KezaMascot from '@/components/immersive/KezaMascot';
 import { resolveActiveCharacterIndex } from '@/lib/immersive/speaker';
-import {
-  ActivityChooser,
-  GameCompleteBurst,
-  HuntClueStrip,
-  PredictNextOverlay,
-  SequenceOverlay,
-  VocabPromptStrip,
-} from './EngagementOverlays';
+import { GameCompleteBurst, PredictNextOverlay } from './EngagementOverlays';
+import WordBuildOverlay from './WordBuildOverlay';
 
 const StoryCanvas = dynamic(() => import('./StoryCanvas'), { ssr: false });
 
@@ -79,7 +76,6 @@ interface ImmersiveStoryPlayerProps {
 type PackPhase =
   | { kind: 'idle' }
   | { kind: 'predict' }
-  | { kind: 'choose' }
   | { kind: 'pack'; activity: PostStoryActivity }
   | { kind: 'celebrate'; message: string }
   | { kind: 'done' };
@@ -109,6 +105,7 @@ export default function ImmersiveStoryPlayer({
   const displayLanguage = useImmersiveStore((s) => s.displayLanguage);
   const setDisplayLanguage = useImmersiveStore((s) => s.setDisplayLanguage);
   const adjustCameraZoom = useImmersiveStore((s) => s.adjustCameraZoom);
+  const setCameraZoom = useImmersiveStore((s) => s.setCameraZoom);
   const ambientMuted = useImmersiveStore((s) => s.ambientMuted);
   const setAmbientMuted = useImmersiveStore((s) => s.setAmbientMuted);
   const setSceneChromeHidden = useImmersiveStore((s) => s.setSceneChromeHidden);
@@ -117,13 +114,12 @@ export default function ImmersiveStoryPlayer({
     (s) => s.setEngagementTargetPropTypes
   );
   const setFoundPropTypes = useImmersiveStore((s) => s.setFoundPropTypes);
-  const markPropFound = useImmersiveStore((s) => s.markPropFound);
   const setVocabExpectedPropType = useImmersiveStore((s) => s.setVocabExpectedPropType);
-  const setWrongTapPropType = useImmersiveStore((s) => s.setWrongTapPropType);
   const setHintPropType = useImmersiveStore((s) => s.setHintPropType);
   const setActiveHotspot = useImmersiveStore((s) => s.setActiveHotspot);
   const setActiveWordSpark = useImmersiveStore((s) => s.setActiveWordSpark);
   const setOnWordSparkOpen = useImmersiveStore((s) => s.setOnWordSparkOpen);
+  const setOnWordSparkClose = useImmersiveStore((s) => s.setOnWordSparkClose);
   const setWordSparkVocabHints = useImmersiveStore((s) => s.setWordSparkVocabHints);
   const setOnEngagementPropSelect = useImmersiveStore((s) => s.setOnEngagementPropSelect);
   const setSentenceCount = useImmersiveStore((s) => s.setSentenceCount);
@@ -142,13 +138,7 @@ export default function ImmersiveStoryPlayer({
   const [started, setStarted] = useState(false);
   const [askOpen, setAskOpen] = useState(false);
   const [phase, setPhase] = useState<PackPhase>({ kind: 'idle' });
-  const [huntTargetIndex, setHuntTargetIndex] = useState(0);
-  const [vocabPairIndex, setVocabPairIndex] = useState(0);
   const [predictResolved, setPredictResolved] = useState(false);
-  const [missCount, setMissCount] = useState(0);
-  const [celebration, setCelebration] = useState<string | null>(null);
-  const [softMiss, setSoftMiss] = useState<string | null>(null);
-  const [busyTap, setBusyTap] = useState(false);
   /** Session cache for on-demand Kinyarwanda when sentences lack kinyarwanda_text */
   const [rwOverrides, setRwOverrides] = useState<Record<string, string>>({});
   const [rwTranslating, setRwTranslating] = useState(false);
@@ -168,6 +158,7 @@ export default function ImmersiveStoryPlayer({
   const advancingRef = useRef(false);
   const ttsActiveRef = useRef(false);
   const userPausedRef = useRef(false);
+  const pausedByKezaRef = useRef(false);
   const lipSyncTimingsRef = useRef<ReturnType<typeof buildMouthSyncTimings>>([]);
   const ambientRef = useRef<ReturnType<typeof createAmbientSoundscape> | null>(null);
   const predictShownRef = useRef(false);
@@ -175,6 +166,7 @@ export default function ImmersiveStoryPlayer({
   const storyAdvanceBlockedRef = useRef(false);
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
+  const isPredictPhase = (): boolean => phaseRef.current.kind === 'predict';
 
   const slots =
     characters.length > 0
@@ -202,24 +194,21 @@ export default function ImmersiveStoryPlayer({
     () => getPredictNextActivity(resolvedActivities),
     [resolvedActivities]
   );
-  /** Trim to short kid-friendly lengths so games stay snappy */
+  /** Letter Party — post-story word build from vocab / hunt synthesis */
   const postActivities = useMemo((): PostStoryActivity[] => {
-    return getPostStoryActivities(resolvedActivities).map((activity) => {
-      if (activity.type === 'treasure_hunt') {
-        return { ...activity, targets: activity.targets.slice(0, 3) };
-      }
-      if (activity.type === 'vocab_match') {
-        return { ...activity, pairs: activity.pairs.slice(0, 3) };
-      }
-      return activity;
-    });
-  }, [resolvedActivities]);
+    return getPostStoryActivities(resolvedActivities, {
+      sceneBrief,
+      sceneSpec,
+      environment,
+      sentences,
+    }).map((activity) => ({
+      ...activity,
+      pairs: activity.pairs.slice(0, 4),
+    }));
+  }, [environment, resolvedActivities, sceneBrief, sceneSpec, sentences]);
 
   const vocabHints = useMemo(
-    () =>
-      postActivities.flatMap((activity) =>
-        activity.type === 'vocab_match' ? activity.pairs : []
-      ),
+    () => postActivities.flatMap((activity) => activity.pairs),
     [postActivities]
   );
 
@@ -244,12 +233,7 @@ export default function ImmersiveStoryPlayer({
   );
 
   // Always offer EN/RW — narration falls back to English when a line has no RW text.
-  const keepScene =
-    phase.kind === 'predict' ||
-    phase.kind === 'choose' ||
-    phase.kind === 'celebrate' ||
-    (phase.kind === 'pack' &&
-      (phase.activity.type === 'treasure_hunt' || phase.activity.type === 'vocab_match'));
+  const keepScene = phase.kind === 'predict' || phase.kind === 'celebrate';
 
   const logActivity = useCallback(
     (eventType: ActivityLogEvent, metadata: Record<string, unknown>) => {
@@ -260,20 +244,11 @@ export default function ImmersiveStoryPlayer({
 
   const beginPostPack = useCallback(() => {
     resetEngagement();
-    setMissCount(0);
-    setCelebration(null);
-    setSoftMiss(null);
-    setBusyTap(false);
     if (postActivities.length === 0) {
       setPhase({ kind: 'done' });
       return;
     }
-    // One game only — kid picks (or auto-starts if just one)
-    if (postActivities.length === 1) {
-      setPhase({ kind: 'pack', activity: postActivities[0] });
-      return;
-    }
-    setPhase({ kind: 'choose' });
+    setPhase({ kind: 'pack', activity: postActivities[0] });
   }, [postActivities, resetEngagement]);
 
   useEffect(() => {
@@ -406,9 +381,10 @@ export default function ImmersiveStoryPlayer({
 
   const skipToDone = useCallback(() => {
     resetEngagement();
+    setCameraZoom(CAMERA_ZOOM_DEFAULT);
     setPhase({ kind: 'done' });
     void persistCompletion();
-  }, [persistCompletion, resetEngagement]);
+  }, [persistCompletion, resetEngagement, setCameraZoom]);
 
   const advanceSentence = useCallback(() => {
     if (advancingRef.current || phase.kind === 'predict') return;
@@ -469,22 +445,41 @@ export default function ImmersiveStoryPlayer({
   useEffect(() => {
     if (completed || !started) {
       setOnWordSparkOpen(null);
+      setOnWordSparkClose(null);
       return;
     }
     const open = () => {
       cleanupPlayback();
-      // Keep the story paused while Keza’s card is open
+      // Pause the story while Keza’s card is open
       userPausedRef.current = true;
+      pausedByKezaRef.current = true;
       setUserPaused(true);
       setActiveHotspot(null);
       setWordsSparked((count) => count + 1);
     };
+    const close = () => {
+      if (!pausedByKezaRef.current) return;
+      pausedByKezaRef.current = false;
+      userPausedRef.current = false;
+      setUserPaused(false);
+      void (async () => {
+        await unlockAudioPlayback();
+        // Kid may have paused again; don't force play
+        if (userPausedRef.current) return;
+        await playCurrentSentenceRef.current();
+      })();
+    };
     setOnWordSparkOpen(open);
-    return () => setOnWordSparkOpen(null);
+    setOnWordSparkClose(close);
+    return () => {
+      setOnWordSparkOpen(null);
+      setOnWordSparkClose(null);
+    };
   }, [
     cleanupPlayback,
     completed,
     setActiveHotspot,
+    setOnWordSparkClose,
     setOnWordSparkOpen,
     setUserPaused,
     started,
@@ -509,54 +504,25 @@ export default function ImmersiveStoryPlayer({
   const finishGame = useCallback(
     (message: string) => {
       resetEngagement();
-      setHuntTargetIndex(0);
-      setVocabPairIndex(0);
-      setMissCount(0);
-      setCelebration(null);
-      setSoftMiss(null);
-      setBusyTap(false);
+      setCameraZoom(CAMERA_ZOOM_DEFAULT);
       setLastGameMessage(message);
       setPhase({ kind: 'celebrate', message });
     },
-    [resetEngagement]
+    [resetEngagement, setCameraZoom]
   );
 
   const currentPackActivity = phase.kind === 'pack' ? phase.activity : undefined;
 
-  // Start hunt / vocab when pack activity changes
+  // Letter Party — UI-only; turn off 3D engagement
   useEffect(() => {
     if (phase.kind !== 'pack' || !currentPackActivity) return;
-
-    setMissCount(0);
-    setCelebration(null);
-    setSoftMiss(null);
-    setBusyTap(false);
+    setEngagementMode('off');
+    setEngagementTargetPropTypes([]);
+    setVocabExpectedPropType(null);
     setHintPropType(null);
     setActiveHotspot(null);
-
-    if (currentPackActivity.type === 'treasure_hunt') {
-      const hunt = currentPackActivity;
-      setHuntTargetIndex(0);
-      setFoundPropTypes([]);
-      setEngagementMode('hunt');
-      // Only the CURRENT treasure is tappable — avoids "wrong" on future finds
-      setEngagementTargetPropTypes(
-        hunt.targets[0] ? [hunt.targets[0].propType] : []
-      );
-      logActivity('ACTIVITY_STARTED', { activityType: 'treasure_hunt' });
-    } else if (currentPackActivity.type === 'vocab_match') {
-      const vocab = currentPackActivity;
-      setVocabPairIndex(0);
-      setFoundPropTypes([]);
-      setEngagementMode('vocab');
-      setEngagementTargetPropTypes(vocab.pairs.map((p) => p.propType));
-      setVocabExpectedPropType(vocab.pairs[0]?.propType ?? null);
-      logActivity('ACTIVITY_STARTED', { activityType: 'vocab_match' });
-    } else if (currentPackActivity.type === 'sequence') {
-      setEngagementMode('off');
-      setEngagementTargetPropTypes([]);
-      logActivity('ACTIVITY_STARTED', { activityType: 'sequence' });
-    }
+    setFoundPropTypes([]);
+    logActivity('ACTIVITY_STARTED', { activityType: 'word_build' });
   }, [
     currentPackActivity,
     logActivity,
@@ -569,123 +535,10 @@ export default function ImmersiveStoryPlayer({
     setVocabExpectedPropType,
   ]);
 
-  const flashHint = useCallback(
-    (propType: string) => {
-      setHintPropType(propType);
-      window.setTimeout(() => setHintPropType(null), 2200);
-    },
-    [setHintPropType]
-  );
-
-  const handleHuntOrVocabTap = useCallback(
-    (propType: string) => {
-      if (phase.kind !== 'pack' || !currentPackActivity || busyTap) return;
-
-      if (currentPackActivity.type === 'treasure_hunt') {
-        const hunt = currentPackActivity;
-        const target = hunt.targets[huntTargetIndex];
-        if (!target) return;
-
-        if (propType !== target.propType) {
-          setMissCount((n) => n + 1);
-          setWrongTapPropType(propType);
-          setSoftMiss('Keza says: wrong clue path — hunt the treasure!');
-          window.setTimeout(() => {
-            setWrongTapPropType(null);
-            setSoftMiss(null);
-          }, 900);
-          return;
-        }
-
-        setBusyTap(true);
-        setMissCount(0);
-        setHintPropType(null);
-        markPropFound(propType);
-        const nextIndex = huntTargetIndex + 1;
-        const foundAll = nextIndex >= hunt.targets.length;
-        setCelebration(foundAll ? 'All treasures found!' : 'Treasure found! ★');
-
-        window.setTimeout(() => {
-          setCelebration(null);
-          if (foundAll) {
-            logActivity('ACTIVITY_COMPLETED', {
-              activityType: 'treasure_hunt',
-              score: hunt.targets.length,
-              total: hunt.targets.length,
-              correct: true,
-            });
-            finishGame('Treasure hunt complete!');
-          } else {
-            setHuntTargetIndex(nextIndex);
-            setEngagementTargetPropTypes([hunt.targets[nextIndex].propType]);
-            setBusyTap(false);
-          }
-        }, 1000);
-        return;
-      }
-
-      if (currentPackActivity.type === 'vocab_match') {
-        const vocab = currentPackActivity;
-        const pair = vocab.pairs[vocabPairIndex];
-        if (!pair) return;
-
-        if (propType !== pair.propType) {
-          setMissCount((n) => n + 1);
-          setWrongTapPropType(propType);
-          setSoftMiss(`Not that — find “${pair.glossEn}” for ${pair.wordRw}`);
-          window.setTimeout(() => {
-            setWrongTapPropType(null);
-            setSoftMiss(null);
-          }, 1000);
-          return;
-        }
-
-        setBusyTap(true);
-        setMissCount(0);
-        setHintPropType(null);
-        markPropFound(propType);
-        const nextIndex = vocabPairIndex + 1;
-        const done = nextIndex >= vocab.pairs.length;
-        setCelebration(done ? 'Word master!' : `“${pair.wordRw}” — matched!`);
-
-        window.setTimeout(() => {
-          setCelebration(null);
-          if (done) {
-            logActivity('ACTIVITY_COMPLETED', {
-              activityType: 'vocab_match',
-              score: vocab.pairs.length,
-              total: vocab.pairs.length,
-              correct: true,
-            });
-            finishGame('Word match complete!');
-          } else {
-            setVocabPairIndex(nextIndex);
-            setVocabExpectedPropType(vocab.pairs[nextIndex]?.propType ?? null);
-            setBusyTap(false);
-          }
-        }, 900);
-      }
-    },
-    [
-      busyTap,
-      currentPackActivity,
-      finishGame,
-      huntTargetIndex,
-      logActivity,
-      markPropFound,
-      phase.kind,
-      setEngagementTargetPropTypes,
-      setHintPropType,
-      setVocabExpectedPropType,
-      setWrongTapPropType,
-      vocabPairIndex,
-    ]
-  );
-
   useEffect(() => {
-    setOnEngagementPropSelect(handleHuntOrVocabTap);
+    setOnEngagementPropSelect(null);
     return () => setOnEngagementPropSelect(null);
-  }, [handleHuntOrVocabTap, setOnEngagementPropSelect]);
+  }, [setOnEngagementPropSelect]);
 
   const tickRecordedLipSync = useCallback(() => {
     const audio = audioRef.current;
@@ -733,7 +586,7 @@ export default function ImmersiveStoryPlayer({
         setMouthViseme('X');
         if (userPausedRef.current) return;
         if (storyAdvanceBlockedRef.current) return;
-        if (phaseRef.current === 'predict') return;
+        if (isPredictPhase()) return;
         if (useImmersiveStore.getState().activeWordSpark) return;
         advanceSentence();
       };
@@ -816,7 +669,7 @@ export default function ImmersiveStoryPlayer({
   );
 
   const playTts = useCallback(async () => {
-    if (storyAdvanceBlockedRef.current || phaseRef.current === 'predict') return false;
+    if (storyAdvanceBlockedRef.current || isPredictPhase()) return false;
     const text = narrationText(displayLanguage);
     if (!text) return false;
 
@@ -831,7 +684,7 @@ export default function ImmersiveStoryPlayer({
     const speakerIndex = resolveActiveCharacterIndex(current, slots, sentenceIndex);
     const speaker = slots[speakerIndex] ?? slots[0];
 
-    if (storyAdvanceBlockedRef.current || phaseRef.current === 'predict') {
+    if (storyAdvanceBlockedRef.current || isPredictPhase()) {
       ttsActiveRef.current = false;
       stopLipSyncRef.current?.();
       stopLipSyncRef.current = null;
@@ -859,17 +712,17 @@ export default function ImmersiveStoryPlayer({
         ttsPauseResumeRef.current = null;
         if (userPausedRef.current) return;
         if (storyAdvanceBlockedRef.current) return;
-        if (phaseRef.current === 'predict') return;
+        if (isPredictPhase()) return;
         if (useImmersiveStore.getState().activeWordSpark) return;
         advanceSentence();
       },
       onStart: () => {
-        if (storyAdvanceBlockedRef.current || phaseRef.current === 'predict') return;
+        if (storyAdvanceBlockedRef.current || isPredictPhase()) return;
         setPlaying(true);
       },
     });
 
-    if (storyAdvanceBlockedRef.current || phaseRef.current === 'predict') {
+    if (storyAdvanceBlockedRef.current || isPredictPhase()) {
       stopTtsRef.current?.();
       stopTtsRef.current = null;
       ttsPauseResumeRef.current = null;
@@ -894,7 +747,7 @@ export default function ImmersiveStoryPlayer({
 
   const playCurrentSentence = useCallback(async () => {
     if (!current) return;
-    if (storyAdvanceBlockedRef.current || phaseRef.current === 'predict') return;
+    if (storyAdvanceBlockedRef.current || isPredictPhase()) return;
 
     const wantsKinyarwanda =
       displayLanguage === 'rw' && Boolean(resolveRwText(current));
@@ -913,7 +766,7 @@ export default function ImmersiveStoryPlayer({
     setTimeout(() => {
       if (userPausedRef.current) return;
       if (storyAdvanceBlockedRef.current) return;
-      if (phaseRef.current === 'predict') return;
+      if (isPredictPhase()) return;
       if (useImmersiveStore.getState().activeWordSpark) return;
       advanceSentence();
     }, duration);
@@ -1094,12 +947,20 @@ export default function ImmersiveStoryPlayer({
         /* ignore quota / private mode */
       }
     }
+    // Closing Keza via language switch should resume in the new language
+    if (pausedByKezaRef.current) {
+      pausedByKezaRef.current = false;
+      userPausedRef.current = false;
+      setUserPaused(false);
+    }
     setActiveWordSpark(null);
     setDisplayLanguage(lang);
   };
 
   const openAskSheet = () => {
     cleanupPlayback();
+    // Ask sheet replaces Keza — don't auto-resume under the sheet
+    pausedByKezaRef.current = false;
     setActiveWordSpark(null);
     setAskOpen(true);
   };
@@ -1142,7 +1003,6 @@ export default function ImmersiveStoryPlayer({
   useEffect(() => {
     const hide =
       phase.kind === 'predict' ||
-      phase.kind === 'choose' ||
       phase.kind === 'celebrate' ||
       phase.kind === 'pack';
     setSceneChromeHidden(hide);
@@ -1235,35 +1095,6 @@ export default function ImmersiveStoryPlayer({
     );
   }
 
-  // Sequence game (fullscreen overlay)
-  if (completed && phase.kind === 'pack' && currentPackActivity?.type === 'sequence') {
-    return (
-      <div className="relative min-h-[100dvh] overflow-hidden bg-[#1e1b18]">
-        <button
-          type="button"
-          onClick={skipToDone}
-          className="absolute right-4 top-4 z-50 min-h-10 rounded-xl bg-[#520e33]/90 px-4 font-label-sm tracking-widest text-[#ffdbd2] ring-1 ring-[#C4A574]/40"
-        >
-          Maybe later
-        </button>
-        <SequenceOverlay
-          activity={currentPackActivity}
-          onComplete={(correct, score) => {
-            logActivity('ACTIVITY_COMPLETED', {
-              activityType: 'sequence',
-              correct,
-              score,
-              total: currentPackActivity.beats.length,
-            });
-            finishGame(
-              correct ? 'Perfect story order!' : `${score} in the right place — great listening!`
-            );
-          }}
-        />
-      </div>
-    );
-  }
-
   if (!started) {
     return (
       <div className="relative min-h-[100dvh] overflow-hidden bg-[#1e1b18]">
@@ -1292,38 +1123,49 @@ export default function ImmersiveStoryPlayer({
     );
   }
 
+  // Letter Party — fullscreen kids UI (no 3D matching)
+  if (completed && phase.kind === 'pack' && currentPackActivity) {
+    return (
+      <div className="relative min-h-[100dvh] overflow-hidden">
+        <button
+          type="button"
+          onClick={skipToDone}
+          className="absolute right-4 top-4 z-50 min-h-10 rounded-full border-2 border-[#e9d7d0] bg-[#fff8f5] px-4 font-bold text-[#520e33] shadow-md"
+          style={{ fontFamily: "'Baloo 2', cursive, sans-serif" }}
+        >
+          Maybe later
+        </button>
+        <WordBuildOverlay
+          activity={currentPackActivity}
+          onComplete={(score, total) => {
+            logActivity('ACTIVITY_COMPLETED', {
+              activityType: 'word_build',
+              score,
+              total,
+              stars: score,
+              correct: score === total,
+            });
+            finishGame(
+              score === total
+                ? `Letter Party complete! ${score}★`
+                : `${score} of ${total} stars — keep going!`
+            );
+          }}
+        />
+      </div>
+    );
+  }
+
   const showHud = !completed && phase.kind !== 'predict';
   const showDialogueHud =
     !completed &&
     phase.kind !== 'predict' &&
-    phase.kind !== 'choose' &&
     phase.kind !== 'celebrate' &&
     phase.kind !== 'pack';
 
   return (
     <div className="relative min-h-[100dvh] overflow-hidden bg-[#1e1b18]">
       <StoryCanvas showDialogueHud={showDialogueHud} />
-
-      {completed && (phase.kind === 'pack' || phase.kind === 'choose') && (
-        <button
-          type="button"
-          onClick={skipToDone}
-          className="absolute right-4 top-4 z-40 min-h-10 rounded-xl bg-[#520e33]/95 px-4 font-label-sm tracking-widest text-[#ffdbd2] shadow-lg ring-1 ring-[#C4A574]/50"
-        >
-          Maybe later
-        </button>
-      )}
-
-      {phase.kind === 'choose' && (
-        <ActivityChooser
-          activities={postActivities}
-          onPick={(index) => {
-            const activity = postActivities[index];
-            if (activity) setPhase({ kind: 'pack', activity });
-          }}
-          onSkip={skipToDone}
-        />
-      )}
 
       {phase.kind === 'celebrate' && (
         <GameCompleteBurst
@@ -1450,37 +1292,6 @@ export default function ImmersiveStoryPlayer({
       {phase.kind === 'predict' && predictActivity && (
         <PredictNextOverlay activity={predictActivity} onAnswer={handlePredictAnswer} />
       )}
-
-      {phase.kind === 'pack' && currentPackActivity?.type === 'treasure_hunt' && (
-        <HuntClueStrip
-          activity={currentPackActivity}
-          targetIndex={huntTargetIndex}
-          missCount={missCount}
-          celebration={celebration}
-          softMiss={softMiss}
-          onHint={() => {
-            const target = currentPackActivity.targets[huntTargetIndex];
-            if (target) flashHint(target.propType);
-          }}
-        />
-      )}
-
-      {phase.kind === 'pack' &&
-        currentPackActivity?.type === 'vocab_match' &&
-        currentPackActivity.pairs[vocabPairIndex] && (
-          <VocabPromptStrip
-            activity={currentPackActivity}
-            pair={currentPackActivity.pairs[vocabPairIndex]}
-            pairIndex={vocabPairIndex}
-            missCount={missCount}
-            celebration={celebration}
-            softMiss={softMiss}
-            onHint={() => {
-              const pair = currentPackActivity.pairs[vocabPairIndex];
-              if (pair) flashHint(pair.propType);
-            }}
-          />
-        )}
 
 
       <audio ref={audioRef} className="hidden" preload="auto" />

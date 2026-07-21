@@ -5,6 +5,7 @@ import KezaMascot from '@/components/immersive/KezaMascot';
 import { speakNarration } from '@/lib/aiVoice';
 import { useImmersiveStore } from '@/lib/immersive/store';
 import { WORD_SPARK_GUIDE } from '@/lib/immersive/wordSparkGuide';
+import { propTrayIcon } from '@/lib/immersive/propIcons';
 import type {
   PredictNextActivity,
   SequenceActivity,
@@ -446,6 +447,169 @@ export function PredictNextOverlay({
         )}
       </div>
     </div>
+  );
+}
+
+export function GlowTrailTray({
+  activity,
+  activeIndex,
+  onSelectWord,
+  missCount,
+  onHint,
+  celebration,
+  softMiss,
+}: {
+  activity: VocabMatchActivity;
+  activeIndex: number;
+  onSelectWord: (index: number) => void;
+  missCount: number;
+  onHint: () => void;
+  celebration: string | null;
+  softMiss: string | null;
+}) {
+  const displayLanguage = useImmersiveStore((s) => s.displayLanguage);
+  const foundPropTypes = useImmersiveStore((s) => s.foundPropTypes);
+  const useRw = displayLanguage === 'rw';
+  const [hearing, setHearing] = useState(false);
+  const stopHearRef = useRef<(() => void) | null>(null);
+  const active = activity.pairs[activeIndex];
+  const foundCount = activity.pairs.filter((p) => foundPropTypes.includes(p.propType)).length;
+  const prompt =
+    useRw && activity.promptRw?.trim() ? activity.promptRw.trim() : activity.promptEn;
+
+  const hearWord = async (word: string) => {
+    if (!word) return;
+    stopHearRef.current?.();
+    setHearing(true);
+    try {
+      const stop = await speakNarration(word, {
+        lang: 'rw',
+        onEnd: () => {
+          setHearing(false);
+          stopHearRef.current = null;
+        },
+      });
+      stopHearRef.current = () => {
+        stop();
+        setHearing(false);
+        stopHearRef.current = null;
+      };
+    } catch {
+      setHearing(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!active?.wordRw || celebration) return;
+    let cancelled = false;
+    void (async () => {
+      await delay(280);
+      if (cancelled) return;
+      await hearWord(active.wordRw);
+    })();
+    return () => {
+      cancelled = true;
+      stopHearRef.current?.();
+      stopHearRef.current = null;
+    };
+    // Re-speak when the active trail word changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active?.wordRw, active?.propType, celebration]);
+
+  if (!active && !celebration) return null;
+
+  return (
+    <>
+      {celebration && <SoftToast message={celebration} tone="ok" />}
+      {softMiss && !celebration && <SoftToast message={softMiss} tone="soft" />}
+      <div className="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex justify-center px-3">
+        <div className="w-full max-w-lg rounded-[1.75rem] border-2 border-[#E8B84A]/50 bg-[#241810]/96 px-3.5 py-3 shadow-2xl shadow-black/40 backdrop-blur-sm">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <KezaMascot size={36} />
+              <div>
+                <p className="font-label-sm uppercase tracking-[0.2em] text-[#E8B84A]">
+                  Keza&apos;s Glow Trail
+                </p>
+                <p className="text-[10px] text-[#C4A574]/85">
+                  {foundCount} of {activity.pairs.length} glowing
+                </p>
+              </div>
+            </div>
+            <StarsRow count={foundCount} total={activity.pairs.length} />
+          </div>
+
+          <p className="mt-1.5 text-center text-xs text-[#ffdbd2]/75">{prompt}</p>
+
+          <div className="mt-3 flex flex-wrap justify-center gap-2">
+            {activity.pairs.map((pair, index) => {
+              const found = foundPropTypes.includes(pair.propType);
+              const isActive = index === activeIndex && !found;
+              return (
+                <button
+                  key={`${pair.propType}-${pair.wordRw}`}
+                  type="button"
+                  disabled={found || Boolean(celebration)}
+                  onClick={() => {
+                    if (found) return;
+                    onSelectWord(index);
+                  }}
+                  className={`pointer-events-auto flex min-w-[4.75rem] flex-col items-center rounded-2xl px-2.5 py-2 transition ${
+                    found
+                      ? 'border border-[#E8B84A]/55 bg-[#3a2a10]/95 opacity-90'
+                      : isActive
+                        ? 'border-2 border-[#E8836B] bg-[#E8D5C4] shadow-[0_0_16px_rgba(232,131,107,0.35)]'
+                        : 'border border-[#C4A574]/35 bg-[#2a1f10]/95 hover:border-[#E8B84A]/55'
+                  }`}
+                >
+                  <span className="text-lg leading-none" aria-hidden>
+                    {propTrayIcon(pair.propType)}
+                  </span>
+                  <span
+                    className={`mt-1 text-sm font-bold leading-tight ${
+                      isActive ? 'text-[#3d2418]' : 'text-[#fff8f5]'
+                    }`}
+                    style={{ fontFamily: "'Baloo 2', cursive, sans-serif" }}
+                  >
+                    {pair.wordRw}
+                  </span>
+                  <span
+                    className={`mt-0.5 text-[10px] ${
+                      found ? 'text-[#E8B84A]' : isActive ? 'text-[#5c3a28]/80' : 'text-[#C4A574]/70'
+                    }`}
+                  >
+                    {found ? '★' : isActive ? 'tap in world' : pair.glossEn}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {active && !celebration && (
+            <div className="mt-3 flex items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => void hearWord(active.wordRw)}
+                disabled={hearing}
+                className="pointer-events-auto flex min-h-9 items-center gap-1.5 rounded-full bg-[#E8836B] px-4 text-xs font-bold text-white disabled:opacity-60"
+                style={{ fontFamily: "'Baloo 2', cursive, sans-serif" }}
+              >
+                {hearing ? '…' : 'Hear again'}
+              </button>
+              {missCount >= 2 && (
+                <button
+                  type="button"
+                  onClick={onHint}
+                  className="pointer-events-auto min-h-9 rounded-full bg-[#3a2a10] px-4 text-xs uppercase tracking-widest text-[#E8B84A] ring-1 ring-[#E8B84A]/50"
+                >
+                  Glow hint
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </>
   );
 }
 

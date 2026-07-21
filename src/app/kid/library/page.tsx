@@ -277,6 +277,7 @@ export default function KidLibraryPage() {
     completed: 0,
     total: 0,
   });
+  const [stars, setStars] = useState({ starsThisWeek: 0, starsTotal: 0 });
   const [filter, setFilter] = useState<FilterTab>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -295,6 +296,9 @@ export default function KidLibraryPage() {
         setStories(data.stories ?? []);
         setCounts(
           data.counts ?? { new: 0, unread: 0, reading: 0, completed: 0, total: 0 }
+        );
+        setStars(
+          data.stars ?? { starsThisWeek: 0, starsTotal: 0 }
         );
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load library');
@@ -328,12 +332,34 @@ export default function KidLibraryPage() {
   return (
     <div>
       <header className="mb-6 animate-kid-rise sm:mb-8">
-        <p className="font-body-md text-sm text-[#857278]">
-          {greeting}, {firstName}
-        </p>
-        <h1 className="mt-1 font-headline-lg text-[2rem] leading-tight text-[#520e33] sm:text-4xl">
-          What shall we read?
-        </h1>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="font-body-md text-sm text-[#857278]">
+              {greeting}, {firstName}
+            </p>
+            <h1 className="mt-1 font-headline-lg text-[2rem] leading-tight text-[#520e33] sm:text-4xl">
+              What shall we read?
+            </h1>
+          </div>
+          {!loading && (
+            <div
+              className="shrink-0 rounded-2xl border-2 border-[#FF7956]/35 bg-[#fff8f5] px-3 py-2 text-center shadow-sm"
+              title="Letter Party stars"
+            >
+              <p
+                className="text-2xl leading-none text-[#FF7956] sm:text-3xl"
+                style={{ fontFamily: "'Baloo 2', cursive, sans-serif" }}
+              >
+                {stars.starsTotal}★
+              </p>
+              <p className="mt-0.5 font-body-sm text-[10px] uppercase tracking-wide text-[#857278]">
+                {stars.starsThisWeek > 0
+                  ? `+${stars.starsThisWeek} this week`
+                  : 'your stars'}
+              </p>
+            </div>
+          )}
+        </div>
         {!loading && counts.total > 0 && (
           <p className="mt-2 max-w-lg font-body-md text-[#524348]">
             {counts.completed > 0
