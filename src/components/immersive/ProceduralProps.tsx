@@ -8,14 +8,26 @@ export function ProceduralPropContent({
   accentColor,
   highlighted,
   windowGlow = 0,
+  visualRole = 'normal',
 }: {
   type: string;
   accentColor: string;
   highlighted?: boolean;
   windowGlow?: number;
+  visualRole?: 'normal' | 'trail' | 'dim' | 'glow' | 'hint' | 'wrong';
 }) {
-  const emissive = highlighted ? accentColor : '#000000';
-  const emissiveIntensity = highlighted ? 0.22 : 0;
+  const glowHard =
+    visualRole === 'glow' ? 0.55 : visualRole === 'hint' ? 0.38 : highlighted ? 0.28 : 0;
+  const emissive =
+    visualRole === 'wrong'
+      ? '#C45C4A'
+      : glowHard > 0
+        ? accentColor
+        : visualRole === 'trail'
+          ? '#FFE8C8'
+          : '#000000';
+  const emissiveIntensity =
+    visualRole === 'wrong' ? 0.2 : glowHard > 0 ? glowHard : visualRole === 'trail' ? 0.1 : 0;
 
   if (type === 'tree') {
     return (

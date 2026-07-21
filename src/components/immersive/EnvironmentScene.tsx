@@ -26,6 +26,7 @@ function PropMesh({
   scale = 1,
   interactive,
   highlighted,
+  visualRole = 'normal',
   windowGlow,
   onSelect,
 }: {
@@ -36,30 +37,49 @@ function PropMesh({
   scale?: number;
   interactive?: boolean;
   highlighted?: boolean;
+  visualRole?: 'normal' | 'trail' | 'dim' | 'glow' | 'hint' | 'wrong';
   windowGlow: number;
   onSelect?: () => void;
 }) {
   const groupRef = useRef<Group>(null);
   const propType = type as PropType;
   const hasModel = Boolean(getPropModelConfig(propType));
+  const showTrailRing =
+    visualRole === 'trail' ||
+    visualRole === 'hint' ||
+    visualRole === 'glow' ||
+    visualRole === 'wrong';
 
   useFrame((state) => {
     if (!groupRef.current) return;
     const t = state.clock.elapsedTime;
-    const pulse = interactive
-      ? 1 + Math.sin(t * (highlighted ? 3.6 : 2.4)) * (highlighted ? 0.1 : 0.03)
+    const glowPulse =
+      visualRole === 'glow' ? 0.14 : visualRole === 'hint' ? 0.1 : highlighted ? 0.08 : 0.03;
+    const pulse = interactive || visualRole === 'glow' || visualRole === 'hint'
+      ? 1 + Math.sin(t * (visualRole === 'glow' ? 5.2 : highlighted ? 3.6 : 2.4)) * glowPulse
       : 1;
     groupRef.current.scale.setScalar(scale * pulse);
-    if (animate) {
+
+    const bob =
+      visualRole === 'trail' || visualRole === 'hint'
+        ? Math.sin(t * 2.1 + position[0]) * 0.045
+        : visualRole === 'glow'
+          ? Math.sin(t * 6 + position[0]) * 0.06
+          : 0;
+
+    if (animate || bob !== 0) {
       if (type === 'tree' || type === 'banana_tree') {
         groupRef.current.rotation.z = Math.sin(t * 0.8 + position[0]) * 0.04;
       }
       if (type === 'stall' || type === 'flower' || type === 'millet_field') {
-        groupRef.current.position.y = position[1] + Math.sin(t * 1.2 + position[0]) * 0.015;
-      }
-      if (type === 'goat') {
-        groupRef.current.position.y = position[1] + Math.sin(t * 2.4 + position[0]) * 0.012;
+        groupRef.current.position.y =
+          position[1] + bob + Math.sin(t * 1.2 + position[0]) * 0.015;
+      } else if (type === 'goat') {
+        groupRef.current.position.y =
+          position[1] + bob + Math.sin(t * 2.4 + position[0]) * 0.012;
         groupRef.current.rotation.y = Math.sin(t * 0.6 + position[0]) * 0.08;
+      } else if (bob !== 0) {
+        groupRef.current.position.y = position[1] + bob;
       }
       if (type === 'drum') {
         groupRef.current.scale.setScalar(
@@ -86,7 +106,6 @@ function PropMesh({
     document.body.style.cursor = 'auto';
   };
 
-  // Always bind interaction on the outer group so GLTF + procedural fallbacks stay tappable
   const interactionProps = interactive
     ? {
         onClick: handleClick,
@@ -95,17 +114,46 @@ function PropMesh({
       }
     : {};
 
+  const ringColor =
+    visualRole === 'glow'
+      ? '#E8B84A'
+      : visualRole === 'wrong'
+        ? '#C45C4A'
+        : visualRole === 'hint'
+          ? '#F0D090'
+          : '#E8D5A8';
+
   const procedural = (
     <ProceduralPropContent
       type={type}
       accentColor={accentColor}
-      highlighted={highlighted}
+      highlighted={highlighted || visualRole === 'glow' || visualRole === 'hint'}
       windowGlow={windowGlow}
+      visualRole={visualRole}
     />
   );
 
   return (
     <group ref={groupRef} position={position} {...interactionProps}>
+      {showTrailRing && (
+        <mesh position={[0, 0.03, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[0.32, 0.46, 28]} />
+          <meshBasicMaterial
+            color={ringColor}
+            transparent
+            opacity={visualRole === 'glow' ? 0.95 : 0.7}
+            depthWrite={false}
+          />
+        </mesh>
+      )}
+      {(visualRole === 'glow' || visualRole === 'hint') && (
+        <pointLight
+          position={[0, 0.7, 0.2]}
+          intensity={visualRole === 'glow' ? 1.1 : 0.55}
+          distance={2.8}
+          color={ringColor}
+        />
+      )}
       {hasModel ? (
         <Suspense fallback={procedural}>
           <PropModel
@@ -113,6 +161,7 @@ function PropMesh({
             accentColor={accentColor}
             highlighted={highlighted}
             windowGlow={windowGlow}
+            visualRole={visualRole}
             fallback={procedural}
           />
         </Suspense>
@@ -273,6 +322,7 @@ export default function EnvironmentScene() {
   const foundPropTypes = useImmersiveStore((s) => s.foundPropTypes);
   const wrongTapPropType = useImmersiveStore((s) => s.wrongTapPropType);
   const hintPropType = useImmersiveStore((s) => s.hintPropType);
+  const confirmPropType = useImmersiveStore((s) => s.confirmPropType);
   const vocabExpectedPropType = useImmersiveStore((s) => s.vocabExpectedPropType);
   const onEngagementPropSelect = useImmersiveStore((s) => s.onEngagementPropSelect);
   const hasDialogue = useImmersiveStore((s) =>
@@ -283,8 +333,13 @@ export default function EnvironmentScene() {
     isPlaying ||
     hasDialogue ||
     engagementMode === 'hunt' ||
-    engagementMode === 'vocab';
-  const inEngagement = engagementMode === 'hunt' || engagementMode === 'vocab';
+    engagementMode === 'vocab' ||
+    engagementMode === 'glow';
+  const inEngagement =
+    engagementMode === 'hunt' ||
+    engagementMode === 'vocab' ||
+    engagementMode === 'glow';
+  const inGlowTrail = engagementMode === 'glow';
 
   const typeCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -420,21 +475,47 @@ export default function EnvironmentScene() {
         const isEngagementTarget =
           inEngagement && engagementTargetPropTypes.includes(obj.type);
         const alreadyFound = foundPropTypes.includes(obj.type);
-        const interactive = inEngagement
+        const interactive = inGlowTrail
           ? isEngagementTarget && !alreadyFound
-          : Boolean(hotspot);
-        // Hunt: only the current glowing target. Vocab: expected answer pulses; hint louder.
+          : inEngagement
+            ? isEngagementTarget && !alreadyFound
+            : Boolean(hotspot);
+
+        // Glow Trail: no answer reveal until hint/confirm — lean on audio + explore
         const isCurrentGoal =
           engagementMode === 'hunt'
             ? isEngagementTarget && !alreadyFound
             : engagementMode === 'vocab'
               ? obj.type === vocabExpectedPropType && !alreadyFound
               : false;
-        const highlighted = inEngagement
-          ? wrongTapPropType === obj.type ||
-            hintPropType === obj.type ||
-            isCurrentGoal
-          : hotspot?.id === activeHotspotId;
+
+        let visualRole: 'normal' | 'trail' | 'dim' | 'glow' | 'hint' | 'wrong' = 'normal';
+        if (inGlowTrail) {
+          if (confirmPropType === obj.type) visualRole = 'glow';
+          else if (wrongTapPropType === obj.type) visualRole = 'wrong';
+          else if (hintPropType === obj.type) visualRole = 'hint';
+          else if (isEngagementTarget && !alreadyFound) visualRole = 'trail';
+          else if (!alreadyFound) visualRole = 'dim';
+        }
+
+        const highlighted = inGlowTrail
+          ? visualRole === 'glow' || visualRole === 'hint' || visualRole === 'wrong'
+          : inEngagement
+            ? wrongTapPropType === obj.type ||
+              hintPropType === obj.type ||
+              isCurrentGoal
+            : hotspot?.id === activeHotspotId;
+
+        const accent =
+          visualRole === 'glow' || (highlighted && engagementMode === 'hunt')
+            ? '#E8B84A'
+            : visualRole === 'wrong'
+              ? '#C45C4A'
+              : highlighted && engagementMode === 'vocab'
+                ? '#E8836B'
+                : visualRole === 'trail' || visualRole === 'hint'
+                  ? '#E8B84A'
+                  : (preset.accentColor ?? '#520e33');
 
         return (
           <PropMesh
@@ -442,10 +523,11 @@ export default function EnvironmentScene() {
             type={obj.type}
             position={obj.position}
             scale={obj.scale}
-            accentColor={preset.accentColor ?? '#520e33'}
+            accentColor={accent}
             animate={animateProps}
             interactive={interactive}
             highlighted={highlighted}
+            visualRole={visualRole}
             windowGlow={windowGlow}
             onSelect={
               interactive

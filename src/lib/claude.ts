@@ -114,7 +114,7 @@ const ENGAGEMENT_ACTIVITIES_SCHEMA = {
   minItems: 2,
   maxItems: 3,
   description:
-    '2–3 kid engagement activities (at most one of each type). Always include predict_next when there are ≥4 sentences. Also include 1–2 of treasure_hunt, sequence, vocab_match. Prop types for hunt/vocab MUST appear in sceneBrief.keyProps.',
+    '2–3 kid engagement activities (at most one of each type). Always include predict_next when there are ≥4 sentences. Always include vocab_match (Letter Party: Kinyarwanda word + English gloss for a missing-letter game). Optionally include sequence. Prefer vocab_match over treasure_hunt. Prop types for vocab/hunt MUST appear in sceneBrief.keyProps.',
   items: {
     type: 'object',
     properties: {
@@ -124,7 +124,7 @@ const ENGAGEMENT_ACTIVITIES_SCHEMA = {
       },
       introEn: {
         type: 'string',
-        description: 'treasure_hunt: short intro before the hunt',
+        description: 'treasure_hunt: short intro before the hunt (legacy; prefer vocab_match)',
       },
       introRw: { type: 'string' },
       targets: {
@@ -178,7 +178,8 @@ const ENGAGEMENT_ACTIVITIES_SCHEMA = {
         type: 'array',
         minItems: 3,
         maxItems: 5,
-        description: 'vocab_match: Kinyarwanda word → prop in the scene',
+        description:
+          'vocab_match (Letter Party): Kinyarwanda word + English gloss; kid fills a missing letter',
         items: {
           type: 'object',
           properties: {
@@ -566,7 +567,7 @@ const SCENE_BRIEF_RULES = `
 - Include 2-4 hotspots on props from sceneBrief.keyProps — short kid-friendly cultural notes
 - Always include engagementActivities (2–3 items, at most one of each type) in the SAME tool call — never a second round-trip
 - Always include predict_next when the story has ≥4 sentences: 3 choices answerable from the story so far; correctChoiceId matches the actual final beat without quoting it verbatim; then encouragementEn
-- Also include 1–2 of treasure_hunt, sequence, vocab_match based on what the narrative supports
+- Always include vocab_match for Letter Party (Kinyarwanda word + gloss; missing-letter game). Optionally sequence. Prefer vocab_match over treasure_hunt
 - treasure_hunt / vocab_match propTypes MUST be types from sceneBrief.keyProps; seed clues/glosses from keyProps[].note when present
 - sequence beats paraphrase real story moments (4–5 short labels) with correctOrder 0..n-1
 

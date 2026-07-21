@@ -499,7 +499,7 @@ function CharacterOverlays({
           position={[0, headY + 0.38, 0.15]}
           center
           distanceFactor={OVERLAY_DISTANCE_FACTOR}
-          zIndexRange={[100, 0]}
+          zIndexRange={[40, 0]}
           style={{ pointerEvents: 'none' }}
         >
           <SpeechIndicator name={name} />
@@ -512,7 +512,7 @@ function CharacterOverlays({
           position={[0, isDog ? height * 0.15 : 0.08, 0.2]}
           center
           distanceFactor={OVERLAY_DISTANCE_FACTOR}
-          zIndexRange={[90, 0]}
+          zIndexRange={[30, 0]}
           style={{ pointerEvents: 'none' }}
         >
           <div

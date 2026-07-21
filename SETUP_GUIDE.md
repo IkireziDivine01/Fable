@@ -294,7 +294,6 @@ SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key_here
 
 ## ⚡ Important Notes
 
-- **Offline-first RxDB**: Your schema supports offline sync. The Supabase client works server-side for initial load; RxDB handles offline sync once implemented.
 - **Session Data**: `session.user` now includes `id`, `email`, `name`, `role`, `householdId` - use these throughout your app
 - **Protected Routes**: Add `useSession()` to any page that needs auth, it auto-redirects if not signed in
 - **Error Handling**: All Supabase functions throw errors - wrap in try/catch

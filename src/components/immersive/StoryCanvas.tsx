@@ -21,6 +21,7 @@ function CameraRig({ compact, worldPreview }: { compact: boolean; worldPreview: 
   const activeCharacterIndex = useImmersiveStore((s) => s.activeCharacterIndex);
   const characters = useImmersiveStore((s) => s.characters);
   const isPlaying = useImmersiveStore((s) => s.isPlaying);
+  const engagementMode = useImmersiveStore((s) => s.engagementMode);
   const hasDialogue = useImmersiveStore((s) =>
     Boolean((s.currentSentenceText ?? '').trim() || (s.currentKinyarwandaText ?? '').trim())
   );
@@ -29,24 +30,24 @@ function CameraRig({ compact, worldPreview }: { compact: boolean; worldPreview: 
   const lookAtY = compact ? 1.1 : 1.35;
 
   const slotCount = characters.length > 0 ? characters.length : 1;
+  const glowWide = engagementMode === 'glow';
   // Match StoryCharacterMesh X so the framing lands on the speaker
-  const focusX = getCharacterX(activeCharacterIndex, slotCount || 1);
-  const focusZ = !worldPreview && hasDialogue ? 0.35 : 0;
-  const closeUp = !worldPreview && hasDialogue;
+  const focusX = glowWide ? 0 : getCharacterX(activeCharacterIndex, slotCount || 1);
+  const focusZ = !worldPreview && hasDialogue && !glowWide ? 0.35 : 0;
+  const closeUp = !worldPreview && hasDialogue && !glowWide;
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
     const orbitX = worldPreview ? Math.sin(t * 0.22) * 0.55 : 0;
     const orbitZ = worldPreview ? Math.cos(t * 0.18) * 0.25 : 0;
-    // Center on the active speaker; slight lag keeps a soft cinematic pan
     const targetX = worldPreview ? orbitX : focusX;
-    const targetY = baseY + (worldPreview ? Math.sin(t * 0.35) * 0.04 : 0);
+    const targetY =
+      (glowWide ? baseY + 0.35 : baseY) + (worldPreview ? Math.sin(t * 0.35) * 0.04 : 0);
     const closeUpZoom = closeUp ? (isPlaying ? -0.75 : -0.45) : 0;
     const targetZ = cameraZoom + orbitZ + closeUpZoom;
-    const lookAtX = worldPreview ? 0 : focusX;
+    const lookAtX = worldPreview || glowWide ? 0 : focusX;
     const lookAtZ = worldPreview ? 0 : focusZ;
-    // Snappier follow when the speaker changes so narration feels locked on
-    const ease = worldPreview ? 0.06 : closeUp ? 0.1 : 0.08;
+    const ease = worldPreview ? 0.06 : closeUp ? 0.1 : glowWide ? 0.09 : 0.08;
 
     camera.position.x += (targetX - camera.position.x) * ease;
     camera.position.y += (targetY - camera.position.y) * ease;
@@ -72,6 +73,7 @@ function SceneContents({
   const currentSentenceText = useImmersiveStore((s) => s.currentSentenceText);
   const sentenceIndex = useImmersiveStore((s) => s.sentenceIndex);
   const activeWordSpark = useImmersiveStore((s) => s.activeWordSpark);
+  const sceneChromeHidden = useImmersiveStore((s) => s.sceneChromeHidden);
   const eventGesture = useActiveGesture();
 
   const slots =
@@ -83,7 +85,7 @@ function SceneContents({
   // Prefer AI/heuristic event gesture; first line gets a welcoming wave
   const reactionGesture =
     eventGesture ?? (sentenceIndex === 0 && (isPlaying || Boolean(currentSentenceText)) ? 'wave' : null);
-  const kezaOpen = Boolean(activeWordSpark);
+  const chromeHidden = Boolean(activeWordSpark) || sceneChromeHidden;
 
   return (
     <>
@@ -113,14 +115,14 @@ function SceneContents({
             faceShape={appearance.faceShape}
             garmentStyle={appearance.garmentStyle}
             personalityPose={appearance.personalityPose}
-            reactionGesture={isActive && !kezaOpen ? reactionGesture : null}
+            reactionGesture={isActive && !chromeHidden ? reactionGesture : null}
             gestureKey={sentenceIndex}
             isSpeaking={
-              !kezaOpen && isActive && (isPlaying || Boolean(currentSentenceText))
+              !chromeHidden && isActive && (isPlaying || Boolean(currentSentenceText))
             }
-            idleMotion={!isActive || worldPreviewActive || kezaOpen}
-            previewSpeech={worldPreviewActive && isActive && !kezaOpen}
-            showNameLabel={!kezaOpen && (showCharacterLabels || isActive)}
+            idleMotion={!isActive || worldPreviewActive || chromeHidden}
+            previewSpeech={worldPreviewActive && isActive && !chromeHidden}
+            showNameLabel={!chromeHidden && (showCharacterLabels || isActive)}
             characterType={char.type}
             characterName={char.name.trim() || meta.label}
           />

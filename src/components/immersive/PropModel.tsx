@@ -12,6 +12,7 @@ interface PropModelProps {
   accentColor: string;
   highlighted?: boolean;
   windowGlow?: number;
+  visualRole?: 'normal' | 'trail' | 'dim' | 'glow' | 'hint' | 'wrong';
   fallback: ReactNode;
 }
 
@@ -20,7 +21,8 @@ function prepareScene(
   accentColor: string,
   highlighted: boolean,
   windowGlow: number,
-  accentTint: boolean
+  accentTint: boolean,
+  visualRole: 'normal' | 'trail' | 'dim' | 'glow' | 'hint' | 'wrong' = 'normal'
 ): Object3D {
   const root = source.clone(true);
   const accent = new Color(accentColor);
@@ -41,14 +43,25 @@ function prepareScene(
       if (isWindow) {
         next.emissive = new Color('#F5D76E');
         next.emissiveIntensity = Math.max(0.15, windowGlow);
-      } else if (highlighted) {
+      } else if (visualRole === 'glow' || (highlighted && visualRole !== 'dim')) {
         next.emissive = accent.clone();
-        next.emissiveIntensity = 0.22;
+        next.emissiveIntensity = visualRole === 'glow' ? 0.55 : visualRole === 'hint' ? 0.38 : 0.28;
+      } else if (visualRole === 'trail') {
+        next.emissive = new Color('#FFE8C8');
+        next.emissiveIntensity = 0.1;
+        next.color.offsetHSL(0.02, 0.08, 0.06);
+      } else if (visualRole === 'dim') {
+        next.emissiveIntensity = 0;
+        next.color.lerp(new Color('#6a5a48'), 0.42);
+        next.color.multiplyScalar(0.72);
+      } else if (visualRole === 'wrong') {
+        next.emissive = new Color('#C45C4A');
+        next.emissiveIntensity = 0.2;
       } else {
         next.emissiveIntensity = Math.min(next.emissiveIntensity, 0.05);
       }
 
-      if (accentTint && !isWindow) {
+      if (accentTint && !isWindow && visualRole !== 'dim') {
         const c = next.color;
         const greenBias = c.g > c.r && c.g > c.b;
         const warmBias = c.r > 0.45 && c.g > 0.25 && c.b < 0.35;
@@ -75,6 +88,7 @@ function LoadedPropModel({
   accentColor,
   highlighted,
   windowGlow,
+  visualRole,
 }: {
   url: string;
   scale: number;
@@ -84,12 +98,20 @@ function LoadedPropModel({
   accentColor: string;
   highlighted: boolean;
   windowGlow: number;
+  visualRole: 'normal' | 'trail' | 'dim' | 'glow' | 'hint' | 'wrong';
 }) {
   const gltf = useGLTF(url);
   const scene = useMemo(
     () =>
-      prepareScene(gltf.scene, accentColor, highlighted, windowGlow, accentTint),
-    [gltf.scene, accentColor, highlighted, windowGlow, accentTint]
+      prepareScene(
+        gltf.scene,
+        accentColor,
+        highlighted,
+        windowGlow,
+        accentTint,
+        visualRole
+      ),
+    [gltf.scene, accentColor, highlighted, windowGlow, accentTint, visualRole]
   );
 
   return (
@@ -127,6 +149,7 @@ export default function PropModel({
   accentColor,
   highlighted = false,
   windowGlow = 0,
+  visualRole = 'normal',
   fallback,
 }: PropModelProps) {
   const config = getPropModelConfig(type);
@@ -152,6 +175,7 @@ export default function PropModel({
         accentColor={accentColor}
         highlighted={highlighted}
         windowGlow={windowGlow}
+        visualRole={visualRole}
       />
     </ModelErrorBoundary>
   );

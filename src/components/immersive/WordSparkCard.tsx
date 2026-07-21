@@ -23,6 +23,7 @@ export default function WordSparkCard() {
   const storyId = useImmersiveStore((s) => s.storyId);
   const activeWordSpark = useImmersiveStore((s) => s.activeWordSpark);
   const setActiveWordSpark = useImmersiveStore((s) => s.setActiveWordSpark);
+  const onWordSparkClose = useImmersiveStore((s) => s.onWordSparkClose);
   const storyLanguage = useImmersiveStore((s) => s.displayLanguage);
   const vocabHints = useImmersiveStore((s) => s.wordSparkVocabHints);
 
@@ -31,6 +32,7 @@ export default function WordSparkCard() {
   const [error, setError] = useState<string | null>(null);
   const [sparkLang, setSparkLang] = useState<DisplayLanguage>('en');
   const [hearing, setHearing] = useState(false);
+  const [stamping, setStamping] = useState(false);
   const stopHearRef = useRef<(() => void) | null>(null);
   const fetchGenRef = useRef(0);
 
@@ -110,11 +112,29 @@ export default function WordSparkCard() {
 
   if (!activeWordSpark) return null;
 
+  const finishClose = () => {
+    setActiveWordSpark(null);
+    onWordSparkClose?.();
+  };
+
   const close = () => {
     stopHearRef.current?.();
     stopHearRef.current = null;
     setHearing(false);
-    setActiveWordSpark(null);
+    setStamping(false);
+    finishClose();
+  };
+
+  const gotIt = () => {
+    if (stamping) return;
+    stopHearRef.current?.();
+    stopHearRef.current = null;
+    setHearing(false);
+    setStamping(true);
+    window.setTimeout(() => {
+      finishClose();
+      setStamping(false);
+    }, 520);
   };
 
   const stopHearing = () => {
@@ -176,6 +196,11 @@ export default function WordSparkCard() {
           0%, 80%, 100% { opacity: 0.25; transform: scale(0.85); }
           40% { opacity: 1; transform: scale(1.15); }
         }
+        @keyframes got-it-stamp {
+          0% { opacity: 0; transform: scale(1.6) rotate(-12deg); }
+          55% { opacity: 1; transform: scale(0.95) rotate(3deg); }
+          100% { opacity: 1; transform: scale(1) rotate(0deg); }
+        }
       `}</style>
 
       <div
@@ -203,6 +228,23 @@ export default function WordSparkCard() {
             border: '3px solid #5c3a28',
           }}
         >
+          {stamping && (
+            <div
+              className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center"
+              aria-hidden
+            >
+              <span
+                className="rounded-full border-4 border-[#8fd4a0] bg-[#1e2a22]/92 px-5 py-2 text-xl font-bold text-[#8fd4a0] shadow-lg"
+                style={{
+                  fontFamily: "'Baloo 2', cursive, sans-serif",
+                  animation: 'got-it-stamp 0.45s cubic-bezier(0.22, 1.2, 0.36, 1) both',
+                }}
+              >
+                {sparkLang === 'rw' ? 'Yego!' : 'Got it!'}
+              </span>
+            </div>
+          )}
+
           <button
             type="button"
             aria-label="Close"
@@ -303,8 +345,9 @@ export default function WordSparkCard() {
 
           <button
             type="button"
-            onClick={close}
-            className="mx-auto mt-4 flex min-h-11 w-[70%] items-center justify-center rounded-full bg-[#C4A574] text-lg font-bold text-[#3d2418] active:translate-y-0.5"
+            onClick={gotIt}
+            disabled={stamping}
+            className="mx-auto mt-4 flex min-h-11 w-[70%] items-center justify-center rounded-full bg-[#C4A574] text-lg font-bold text-[#3d2418] active:translate-y-0.5 disabled:opacity-80"
             style={{
               fontFamily: "'Baloo 2', cursive, sans-serif",
               boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.35), 0 3px 0 #8a7350',

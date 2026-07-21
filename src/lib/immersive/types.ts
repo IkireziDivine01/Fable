@@ -238,7 +238,7 @@ export type EngagementActivity =
   | PredictNextActivity;
 
 /** Scene interaction mode during engagement activities */
-export type EngagementSceneMode = 'off' | 'explore' | 'hunt' | 'vocab';
+export type EngagementSceneMode = 'off' | 'explore' | 'hunt' | 'vocab' | 'glow';
 
 export interface StorySceneSpec {
   backgroundColor: string;
