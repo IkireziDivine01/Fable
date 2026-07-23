@@ -28,8 +28,14 @@ export default function SentenceAudioRecorder({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
 
+  const canUpload = Boolean(sentenceId) && !sentenceId.startsWith('local-');
+
   const startRecording = async () => {
     setError('');
+    if (!canUpload) {
+      setError('Save sentences first, then record a voice.');
+      return;
+    }
     try {
       recorderRef.current = new AudioRecorder();
       await recorderRef.current.start();
@@ -80,7 +86,8 @@ export default function SentenceAudioRecorder({
         <button
           type="button"
           onClick={startRecording}
-          className="min-h-11 w-full rounded-xl border border-dashed border-[#d7c1c7] bg-white px-4 text-sm text-[#524348] hover:border-[#FF7956]"
+          disabled={uploading}
+          className="min-h-11 w-full rounded-xl border border-dashed border-[#d7c1c7] bg-white px-4 text-sm text-[#524348] hover:border-[#FF7956] disabled:opacity-50"
         >
           Tap to record
         </button>
@@ -105,13 +112,17 @@ export default function SentenceAudioRecorder({
           <button
             type="button"
             onClick={reset}
-            className="min-h-10 w-full rounded-xl border border-[#e9d7d0] bg-white text-sm text-[#524348]"
+            disabled={uploading}
+            className="min-h-10 w-full rounded-xl border border-[#e9d7d0] bg-white text-sm text-[#524348] disabled:opacity-50"
           >
             Re-record
           </button>
         </div>
       )}
 
+      {!canUpload && (
+        <p className="mt-2 text-xs text-[#857278]">Save sentences first to unlock recording.</p>
+      )}
       {error && <p className="mt-2 text-sm text-[#a7391c]">{error}</p>}
     </div>
   );

@@ -551,63 +551,72 @@ export default function ImmersiveStoryPlayer({
     rafRef.current = requestAnimationFrame(tickRecordedLipSync);
   }, [setMouthViseme]);
 
-  const playRecorded = useCallback(async () => {
-    if (!current?.audio_url || !audioRef.current) return false;
+  const playRecorded = useCallback(
+    async (preferKinyarwanda = false) => {
+      const recordedUrl = preferKinyarwanda
+        ? current?.kinyarwanda_audio_url
+        : current?.audio_url;
+      if (!recordedUrl || !audioRef.current) return false;
 
-    try {
-      const audio = audioRef.current;
-      audio.src = current.audio_url;
+      try {
+        const audio = audioRef.current;
+        audio.src = recordedUrl;
 
-      await new Promise<void>((resolve, reject) => {
-        const onReady = () => {
-          audio.removeEventListener('loadedmetadata', onReady);
-          audio.removeEventListener('error', onFail);
-          resolve();
+        await new Promise<void>((resolve, reject) => {
+          const onReady = () => {
+            audio.removeEventListener('loadedmetadata', onReady);
+            audio.removeEventListener('error', onFail);
+            resolve();
+          };
+          const onFail = () => {
+            audio.removeEventListener('loadedmetadata', onReady);
+            audio.removeEventListener('error', onFail);
+            reject(new Error('Audio failed to load'));
+          };
+          if (audio.readyState >= 1) resolve();
+          else {
+            audio.addEventListener('loadedmetadata', onReady);
+            audio.addEventListener('error', onFail);
+          }
+        });
+
+        const duration = Number.isFinite(audio.duration) ? audio.duration : 4;
+        const syllableSource = preferKinyarwanda
+          ? resolveRwText(current) || current.sentence_text
+          : current.sentence_text;
+        lipSyncTimingsRef.current = buildMouthSyncTimings(
+          duration,
+          estimateSyllableCount(syllableSource)
+        );
+
+        audio.onended = () => {
+          setMouthViseme('X');
+          if (userPausedRef.current) return;
+          if (storyAdvanceBlockedRef.current) return;
+          if (isPredictPhase()) return;
+          if (useImmersiveStore.getState().activeWordSpark) return;
+          advanceSentence();
         };
-        const onFail = () => {
-          audio.removeEventListener('loadedmetadata', onReady);
-          audio.removeEventListener('error', onFail);
-          reject(new Error('Audio failed to load'));
-        };
-        if (audio.readyState >= 1) resolve();
-        else {
-          audio.addEventListener('loadedmetadata', onReady);
-          audio.addEventListener('error', onFail);
-        }
-      });
 
-      const duration = Number.isFinite(audio.duration) ? audio.duration : 4;
-      lipSyncTimingsRef.current = buildMouthSyncTimings(
-        duration,
-        estimateSyllableCount(current.sentence_text)
-      );
-
-      audio.onended = () => {
-        setMouthViseme('X');
-        if (userPausedRef.current) return;
-        if (storyAdvanceBlockedRef.current) return;
-        if (isPredictPhase()) return;
-        if (useImmersiveStore.getState().activeWordSpark) return;
-        advanceSentence();
-      };
-
-      setPlaying(true);
-      await audio.play();
-      rafRef.current = requestAnimationFrame(tickRecordedLipSync);
-      return true;
-    } catch {
-      cleanupPlayback();
-      return false;
-    }
-  }, [
-    advanceSentence,
-    cleanupPlayback,
-    current?.audio_url,
-    current?.sentence_text,
-    setMouthViseme,
-    setPlaying,
-    tickRecordedLipSync,
-  ]);
+        setPlaying(true);
+        await audio.play();
+        rafRef.current = requestAnimationFrame(tickRecordedLipSync);
+        return true;
+      } catch {
+        cleanupPlayback();
+        return false;
+      }
+    },
+    [
+      advanceSentence,
+      cleanupPlayback,
+      current,
+      resolveRwText,
+      setMouthViseme,
+      setPlaying,
+      tickRecordedLipSync,
+    ]
+  );
 
   // Fill missing Kinyarwanda when the kid switches language (older stories often lack it).
   useEffect(() => {
@@ -752,8 +761,14 @@ export default function ImmersiveStoryPlayer({
     const wantsKinyarwanda =
       displayLanguage === 'rw' && Boolean(resolveRwText(current));
 
-    if (!wantsKinyarwanda && current.audio_url) {
-      const ok = await playRecorded();
+    if (wantsKinyarwanda) {
+      const ok = await playRecorded(true);
+      if (!ok) await playTts();
+      return;
+    }
+
+    if (current.audio_url) {
+      const ok = await playRecorded(false);
       if (!ok) await playTts();
       return;
     }

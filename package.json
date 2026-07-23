@@ -9,6 +9,9 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:unit": "vitest run src/lib",
+    "test:validation": "vitest run src/app/api/__tests__/validation",
+    "test:integration": "vitest run src/app/api/__tests__/integration",
     "generate:prop-models": "node scripts/generate-prop-models.mjs"
   },
   "dependencies": {

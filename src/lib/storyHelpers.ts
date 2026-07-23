@@ -45,6 +45,8 @@ export interface StorySentenceInput {
   elderTalkingPoints?: string;
   childPrompt?: string;
   audioUrl?: string;
+  /** Pre-generated or recorded Kinyarwanda narration */
+  kinyarwandaAudioUrl?: string;
 }
 
 export interface GeneratedStoryPayload {
@@ -94,6 +96,7 @@ export interface StorySentenceRecord {
   elder_talking_points?: string | null;
   child_prompt?: string | null;
   audio_url?: string | null;
+  kinyarwanda_audio_url?: string | null;
   created_at?: string | null;
 }
 

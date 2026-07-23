@@ -1,9 +1,12 @@
 import { blobToBase64 } from './audioRecorder';
 
+export type SentenceAudioLang = 'en' | 'rw';
+
 export async function uploadSentenceAudio(
   storyId: string,
   sentenceId: string,
-  blob: Blob
+  blob: Blob,
+  lang: SentenceAudioLang = 'en'
 ): Promise<string> {
   const audioBase64 = await blobToBase64(blob);
   const response = await fetch(`/api/stories/${storyId}/sentences/${sentenceId}/audio`, {
@@ -12,6 +15,7 @@ export async function uploadSentenceAudio(
     body: JSON.stringify({
       audioBase64,
       mimeType: blob.type || 'audio/webm',
+      lang,
     }),
   });
 

@@ -44,13 +44,15 @@ export default function ElderCreateStoryPage() {
       }
 
       sentences = await ensureKinyarwandaOnSentences(sentences);
+      // Persist English as the reading transcript; Kinyarwanda lives on each sentence.
+      const normalizedTranscript = sentences.map((s) => s.sentenceText).join(' ');
 
       const response = await fetch('/api/stories', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title,
-          transcript,
+          transcript: normalizedTranscript,
           themes: selectedThemes,
           sentences,
           generationType: 'manual',
@@ -80,8 +82,9 @@ export default function ElderCreateStoryPage() {
           <StoryEyebrow>Write by hand</StoryEyebrow>
           <StoryTitle>Craft your family narrative</StoryTitle>
           <StoryLead>
-            Paste or type the full transcript. We split sentences and generate Kinyarwanda for each
-            line — then you can refine themes, voices, and translations.
+            Paste or type the full transcript in English or Kinyarwanda. We split sentences and
+            translate the other language for each line — then you can refine themes, voices, and
+            translations.
           </StoryLead>
 
           <label className="mb-4 block">
@@ -106,7 +109,7 @@ export default function ElderCreateStoryPage() {
               required
               rows={10}
               className={storyTextareaClass}
-              placeholder="Write the full story. Sentences split at periods, question marks, and exclamation points."
+              placeholder="Write in English or Kinyarwanda. Sentences split at periods, question marks, and exclamation points."
             />
           </label>
 
