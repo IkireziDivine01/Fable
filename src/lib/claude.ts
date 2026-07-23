@@ -519,7 +519,8 @@ async function callClaudeForStory(userPrompt: string, systemPrompt: string): Pro
     },
     body: JSON.stringify({
       model: process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-6',
-      max_tokens: 4096,
+      // Immersive world + bilingual sentences regularly exceed 4k; truncation drops kinyarwandaText.
+      max_tokens: 8192,
       system: systemPrompt,
       tools: [STORY_TOOL],
       tool_choice: { type: 'tool', name: STORY_TOOL_NAME },

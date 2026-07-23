@@ -1,9 +1,12 @@
 import { generateStoryFromPrompt } from '@/lib/claude';
+import { fillMissingKinyarwandaOnPayload } from '@/lib/fillGeneratedStoryKinyarwanda';
 import { validateGeneratedStory } from '@/lib/storyHelpers';
 import { auth } from '@/auth';
 import { normalizeRole } from '@/lib/roles';
 import { getProfileById } from '@/lib/auth-server';
 import { NextResponse } from 'next/server';
+
+export const maxDuration = 120;
 
 export async function POST(request: Request) {
   try {
@@ -24,7 +27,8 @@ export async function POST(request: Request) {
     }
 
     const parsed = await generateStoryFromPrompt(prompt);
-    const story = validateGeneratedStory(parsed);
+    const filled = await fillMissingKinyarwandaOnPayload(parsed);
+    const story = validateGeneratedStory(filled);
 
     return NextResponse.json({ story });
   } catch (error) {
