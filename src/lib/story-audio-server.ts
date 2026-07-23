@@ -2,6 +2,8 @@ import { supabaseAdmin } from './supabase-admin';
 
 const BUCKET = 'story-audio';
 
+export type SentenceAudioLang = 'en' | 'rw';
+
 function extensionForMime(mimeType: string): string {
   if (mimeType.includes('webm')) return 'webm';
   if (mimeType.includes('wav')) return 'wav';
@@ -15,9 +17,11 @@ export async function persistSentenceAudio(input: {
   sentenceId: string;
   buffer: Buffer;
   mimeType: string;
+  lang?: SentenceAudioLang;
 }): Promise<string> {
   const ext = extensionForMime(input.mimeType);
-  const path = `${input.householdId}/${input.storyId}/${input.sentenceId}.${ext}`;
+  const suffix = input.lang === 'rw' ? '-rw' : '';
+  const path = `${input.householdId}/${input.storyId}/${input.sentenceId}${suffix}.${ext}`;
 
   const { error: uploadError } = await supabaseAdmin.storage
     .from(BUCKET)
@@ -40,7 +44,8 @@ export async function setSentenceAudioUrl(
   storyId: string,
   sentenceId: string,
   householdId: string,
-  audioUrl: string
+  audioUrl: string,
+  lang: SentenceAudioLang = 'en'
 ) {
   const { data: story } = await supabaseAdmin
     .from('stories')
@@ -51,14 +56,23 @@ export async function setSentenceAudioUrl(
 
   if (!story) throw new Error('Story not found');
 
+  const column = lang === 'rw' ? 'kinyarwanda_audio_url' : 'audio_url';
   const { data, error } = await supabaseAdmin
     .from('story_sentences')
-    .update({ audio_url: audioUrl })
+    .update({ [column]: audioUrl })
     .eq('id', sentenceId)
     .eq('story_id', storyId)
-    .select('id, audio_url')
+    .select(`id, ${column}`)
     .single();
 
-  if (error || !data) throw new Error(error?.message ?? 'Failed to save sentence audio');
-  return String(data.audio_url);
+  if (error || !data) {
+    const message = error?.message ?? 'Failed to save sentence audio';
+    if (lang === 'rw' && message.toLowerCase().includes('kinyarwanda_audio_url')) {
+      throw new Error(
+        'Kinyarwanda audio is not set up yet. Run supabase/stories_schema.sql in the Supabase SQL Editor (adds kinyarwanda_audio_url).'
+      );
+    }
+    throw new Error(message);
+  }
+  return String((data as Record<string, unknown>)[column] ?? audioUrl);
 }

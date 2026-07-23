@@ -70,8 +70,22 @@ export async function PATCH(
 
     if (action === 'updateSentences') {
       const sentences = (body.sentences ?? []) as StorySentenceInput[];
-      const updated = await updateStorySentences(id, ctx.householdId, sentences);
-      return NextResponse.json({ sentences: updated });
+      try {
+        const updated = await updateStorySentences(id, ctx.householdId, sentences);
+        return NextResponse.json({ sentences: updated });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to update sentences';
+        if (message === 'Story not found') {
+          return NextResponse.json({ error: message }, { status: 404 });
+        }
+        if (
+          message.includes('Kinyarwanda is required') ||
+          message.includes('At least one sentence')
+        ) {
+          return NextResponse.json({ error: message }, { status: 400 });
+        }
+        return NextResponse.json({ error: message }, { status: 500 });
+      }
     }
 
     const story = await updateStoryDraft(id, ctx.householdId, {

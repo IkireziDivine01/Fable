@@ -214,6 +214,67 @@ async function speakWithApiSingleFlight(
 }
 
 /**
+ * Fetch narration audio bytes without playing (for save-as-sentence-voice).
+ * Does not share the playback single-flight lock.
+ */
+export async function fetchNarrationAudio(
+  text: string,
+  options?: {
+    lang?: string;
+    characterType?: CharacterType;
+    personalityPose?: PersonalityPose;
+    provider?: TtsEngine;
+  }
+): Promise<Blob> {
+  const trimmed = String(text ?? '').trim();
+  if (!trimmed) {
+    throw new Error('Nothing to narrate — add sentence text first.');
+  }
+
+  if (typeof window === 'undefined') {
+    throw new Error('TTS is only available in the browser');
+  }
+
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), TTS_FETCH_TIMEOUT_MS);
+
+  try {
+    const provider = options?.provider ?? ttsProviderForLang(options?.lang);
+    const response = await fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: trimmed,
+        lang: options?.lang,
+        characterType: options?.characterType ?? 'grandma',
+        personalityPose: options?.personalityPose,
+        provider,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(payload?.error || `TTS failed (${response.status})`);
+    }
+
+    const mimeType = response.headers.get('content-type')?.split(';')[0]?.trim() || 'audio/mpeg';
+    const bytes = await response.arrayBuffer();
+    if (!bytes.byteLength) {
+      throw new Error('Empty audio from TTS');
+    }
+    return new Blob([bytes], { type: mimeType });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('TTS timed out — try again shortly.');
+    }
+    throw error instanceof Error ? error : new Error('TTS generation failed');
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+/**
  * Speak narration via ElevenLabs (English) or Proto (Kinyarwanda).
  * No browser speechSynthesis fallback.
  */

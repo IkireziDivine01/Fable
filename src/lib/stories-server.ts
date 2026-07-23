@@ -46,6 +46,7 @@ function mapSentence(row: Record<string, unknown>): StorySentenceRecord {
     elder_talking_points: (row.elder_talking_points as string) ?? null,
     child_prompt: (row.child_prompt as string) ?? null,
     audio_url: (row.audio_url as string) ?? null,
+    kinyarwanda_audio_url: (row.kinyarwanda_audio_url as string) ?? null,
     created_at: (row.created_at as string) ?? null,
   };
 }
@@ -224,8 +225,12 @@ export async function updateStorySentences(
     existing.sentences.map((s) => [s.sentence_order, s.audio_url ?? null])
   );
   const audioById = new Map(existing.sentences.map((s) => [s.id, s.audio_url ?? null]));
-
-  await supabaseAdmin.from('story_sentences').delete().eq('story_id', storyId);
+  const rwAudioByOrder = new Map(
+    existing.sentences.map((s) => [s.sentence_order, s.kinyarwanda_audio_url ?? null])
+  );
+  const rwAudioById = new Map(
+    existing.sentences.map((s) => [s.id, s.kinyarwanda_audio_url ?? null])
+  );
 
   const now = new Date().toISOString();
   const rows = sentences.map((sentence, index) => {
@@ -235,23 +240,52 @@ export async function updateStorySentences(
       (sentence.id ? audioById.get(sentence.id) : null) ??
       audioByOrder.get(order) ??
       null;
+    const preservedRwAudio =
+      sentence.kinyarwandaAudioUrl ??
+      (sentence.id ? rwAudioById.get(sentence.id) : null) ??
+      rwAudioByOrder.get(order) ??
+      null;
 
     return {
       story_id: storyId,
       sentence_text: sentence.sentenceText,
       sentence_order: order,
       speaker: sentence.speaker ?? null,
-      kinyarwanda_text: sentence.kinyarwandaText.trim(),
+      kinyarwanda_text: String(sentence.kinyarwandaText ?? '').trim(),
       theme_label: sentence.themeLabel ?? null,
       elder_talking_points: sentence.elderTalkingPoints ?? null,
       child_prompt: sentence.childPrompt ?? null,
       audio_url: preservedAudio,
+      kinyarwanda_audio_url: preservedRwAudio,
       created_at: now,
     };
   });
 
-  const { data, error } = await supabaseAdmin.from('story_sentences').insert(rows).select('*');
+  // Insert first, then remove old rows — avoids wiping sentences if insert fails.
+  let { data, error } = await supabaseAdmin.from('story_sentences').insert(rows).select('*');
+  if (error?.message?.toLowerCase().includes('kinyarwanda_audio_url')) {
+    const legacyRows = rows.map(({ kinyarwanda_audio_url: _rw, ...rest }) => rest);
+    const legacy = await supabaseAdmin.from('story_sentences').insert(legacyRows).select('*');
+    data = legacy.data;
+    error = legacy.error;
+  }
   if (error) throw new Error(error.message);
+
+  const insertedIds = new Set((data ?? []).map((row) => String((row as { id: string }).id)));
+  if (existing.sentences.length > 0) {
+    const staleIds = existing.sentences.map((s) => s.id).filter((id) => !insertedIds.has(id));
+    if (staleIds.length > 0) {
+      const { error: deleteError } = await supabaseAdmin
+        .from('story_sentences')
+        .delete()
+        .in('id', staleIds);
+      if (deleteError) {
+        // Roll back the new rows so we don't leave duplicates.
+        await supabaseAdmin.from('story_sentences').delete().in('id', [...insertedIds]);
+        throw new Error(deleteError.message);
+      }
+    }
+  }
 
   const transcript = sentences.map((s) => s.sentenceText).join(' ');
   await supabaseAdmin

@@ -31,6 +31,8 @@ export async function POST(
     const body = await request.json();
     const audioBase64 = String(body.audioBase64 ?? '');
     const mimeType = String(body.mimeType ?? 'audio/webm');
+    const langRaw = String(body.lang ?? 'en').toLowerCase();
+    const lang = langRaw === 'rw' || langRaw === 'rw-rw' ? 'rw' : 'en';
 
     if (!audioBase64) {
       return NextResponse.json({ error: 'Audio data is required' }, { status: 400 });
@@ -47,10 +49,17 @@ export async function POST(
       sentenceId,
       buffer,
       mimeType,
+      lang,
     });
 
-    const savedUrl = await setSentenceAudioUrl(storyId, sentenceId, ctx.householdId, audioUrl);
-    return NextResponse.json({ audioUrl: savedUrl });
+    const savedUrl = await setSentenceAudioUrl(
+      storyId,
+      sentenceId,
+      ctx.householdId,
+      audioUrl,
+      lang
+    );
+    return NextResponse.json({ audioUrl: savedUrl, lang });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to upload audio' },

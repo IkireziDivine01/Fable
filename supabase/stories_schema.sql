@@ -38,6 +38,9 @@ ALTER TABLE story_sentences
   ADD COLUMN IF NOT EXISTS audio_url TEXT;
 
 ALTER TABLE story_sentences
+  ADD COLUMN IF NOT EXISTS kinyarwanda_audio_url TEXT;
+
+ALTER TABLE story_sentences
   ADD COLUMN IF NOT EXISTS speaker TEXT;
 
 -- Optional: public bucket for sentence audio (service role uploads; learners stream)

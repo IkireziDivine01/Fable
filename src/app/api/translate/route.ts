@@ -1,6 +1,6 @@
 import { auth } from '@/auth';
 import { resolveStorySession } from '@/lib/auth-server';
-import { translateLinesToKinyarwanda } from '@/lib/translate';
+import { translateLines, type TranslateTarget } from '@/lib/translate';
 import { NextResponse } from 'next/server';
 
 export const maxDuration = 60;
@@ -18,10 +18,17 @@ export async function POST(request: Request) {
       target?: unknown;
     };
 
-    const target = String(body.target ?? 'rw').toLowerCase();
-    if (target !== 'rw' && target !== 'rw-rw') {
+    const rawTarget = String(body.target ?? 'rw').toLowerCase();
+    const target: TranslateTarget | null =
+      rawTarget === 'rw' || rawTarget === 'rw-rw'
+        ? 'rw'
+        : rawTarget === 'en' || rawTarget === 'en-us' || rawTarget === 'en-gb'
+          ? 'en'
+          : null;
+
+    if (!target) {
       return NextResponse.json(
-        { error: 'Only Kinyarwanda (rw) translation is supported' },
+        { error: 'Supported translation targets: rw (Kinyarwanda), en (English)' },
         { status: 400 }
       );
     }
@@ -31,8 +38,8 @@ export async function POST(request: Request) {
     }
 
     const texts = body.texts.map((t) => String(t ?? ''));
-    const translations = await translateLinesToKinyarwanda(texts);
-    return NextResponse.json({ translations, target: 'rw' });
+    const translations = await translateLines(texts, target);
+    return NextResponse.json({ translations, target });
   } catch (error) {
     return NextResponse.json(
       {

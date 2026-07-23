@@ -15,6 +15,7 @@ export interface KidSentence {
   theme_label?: string | null;
   child_prompt?: string | null;
   audio_url?: string | null;
+  kinyarwanda_audio_url?: string | null;
 }
 
 interface KidStoryReaderProps {

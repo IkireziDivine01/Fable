@@ -49,6 +49,7 @@ export default function ParentAddStoryPage() {
       }
 
       sentences = await ensureKinyarwandaOnSentences(sentences);
+      const normalizedTranscript = sentences.map((s) => s.sentenceText).join(' ');
 
       const response = await fetch('/api/stories', {
         method: 'POST',
@@ -56,7 +57,7 @@ export default function ParentAddStoryPage() {
         body: JSON.stringify({
           title,
           source: source.trim(),
-          transcript,
+          transcript: normalizedTranscript,
           themes: selectedThemes,
           sentences,
           generationType: 'manual',
@@ -103,8 +104,8 @@ export default function ParentAddStoryPage() {
           <StoryEyebrow>Manual entry</StoryEyebrow>
           <StoryTitle>Add a story to your library</StoryTitle>
           <StoryLead>
-            Paste or type the full text and cite where it comes from. We translate each line to
-            Kinyarwanda automatically so learners can switch languages.
+            Paste or type the full text in English or Kinyarwanda and cite where it comes from. We
+            translate the other language for each line so learners can switch languages.
           </StoryLead>
 
           <label className="mb-4 block">
@@ -147,7 +148,7 @@ export default function ParentAddStoryPage() {
               required
               rows={10}
               className={storyTextareaClass}
-              placeholder="Write the full story. Sentences split at periods, question marks, and exclamation points."
+              placeholder="Write in English or Kinyarwanda. Sentences split at periods, question marks, and exclamation points."
             />
           </label>
 
