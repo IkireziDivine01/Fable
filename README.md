@@ -55,7 +55,7 @@ Built for families first—with parental consent, invitation-only onboarding for
 
 ### Platform
 - **Role-gated routes** — Middleware protects `/parent/*`, `/kid/*`, and `/elder/*`
-- **Unit tests** — Vitest coverage for immersive helpers and story utilities
+- **Tests** — Vitest unit, validation, and integration suites for immersive helpers, story utilities, and key API routes
 
 ---
 
@@ -93,7 +93,7 @@ flowchart LR
 | AI | Anthropic Claude (stories, definitions, translation) |
 | TTS | Proto Voice (Kinyarwanda), ElevenLabs (English), optional Gemini |
 | Client state | Zustand |
-| Tests | Vitest |
+| Tests | Vitest (unit, validation, integration) |
 
 ---
 
@@ -272,8 +272,11 @@ npm run dev                 # Development server
 npm run build               # Production build
 npm run start               # Serve production build
 npm run lint                # ESLint
-npm run test                # Vitest (once)
+npm run test                # Vitest (unit + validation + integration)
 npm run test:watch          # Vitest watch mode
+npm run test:unit           # Unit suite only (src/lib)
+npm run test:validation     # API validation suite only
+npm run test:integration    # API integration suite only
 npm run generate:prop-models  # Rebuild procedural prop GLBs
 ```
 
